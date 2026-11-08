@@ -36,7 +36,7 @@ flowchart TB
         DASH["Freelancer dashboard"]
         ACC["Login, profile, My escrows"]
     end
-    subgraph BE["Backend (Go + PostgreSQL + RabbitMQ)"]
+    subgraph BE["Backend (Go + Gin + PostgreSQL + Redis + RabbitMQ)"]
         API["REST API + auth<br/>(wallet session, guest token, email OTP)"]
         Q["1Click quote + watcher"]
         REL["Meta transaction relayer"]
@@ -63,7 +63,7 @@ flowchart TB
 | Layer | Technology | Notes |
 | --- | --- | --- |
 | Contract | Rust, near-sdk, cargo-near, near-workspaces | Unit and integration tests run against a mock NEP-141 token on a local sandbox / testnet |
-| Backend | Go, PostgreSQL, RabbitMQ | 1Click is called over its REST API; NEAR transactions (relayer, `storage_deposit`, jobs) are sent over NEAR JSON-RPC. Jobs (funding watcher, auto-release, payout retry) are queued in RabbitMQ and processed by workers |
+| Backend | Go (Gin), PostgreSQL, Redis, RabbitMQ | 1Click is called over its REST API; NEAR transactions (relayer, `storage_deposit`, jobs) are sent over NEAR JSON-RPC. Jobs (funding watcher, auto-release, payout retry) are queued in RabbitMQ and processed by workers. Redis holds short-lived state with a TTL (login nonces, OTP rate limits). Layering in section 7.4 |
 | Frontend | React, Vite, NEAR Wallet Selector | Single-page app that talks only to the backend API. EVM and Solana wallets are only needed for signing; paying is a transfer to a deposit address from any wallet |
 
 ## 4. Money flow
@@ -238,11 +238,55 @@ the contract.
 A scheduler in the backend periodically finds due work in PostgreSQL (quotes still
 pending, milestones whose review window has ended, pending payouts) and publishes a
 message per item to RabbitMQ. Workers consume the messages and call 1Click or the
-contract. Failed messages are retried with a delay.
+contract. Failed messages are retried with a delay: each topic has a retry queue whose
+TTL is `QUEUE_RETRY_DELAY`. After `QUEUE_MAX_RETRIES` retries, or on an error marked
+permanent (such as a malformed payload), the message moves to the topic's dead-letter
+queue.
+
+Queue topology for a topic `T` (all durable):
+
+- Exchange `vecrow.jobs` (direct) routes key `T` to queue `T`.
+- Queue `T.retry` has `x-message-ttl=QUEUE_RETRY_DELAY` and dead-letters back to the exchange with key `T`.
+- Queue `T.dlq` holds messages that failed permanently or exhausted their retries.
+
+A failed message is re-published to `T.retry` with `x-attempt` + 1 and the original is
+acked; when the TTL expires, RabbitMQ routes it back to `T`. If a handler hits its
+timeout, the message is settled the same way. Changing `QUEUE_RETRY_DELAY` for an
+existing topic requires deleting `T.retry` first, because RabbitMQ rejects re-declaring
+a queue with different arguments.
 
 All jobs are idempotent: running one twice has the same effect as running it once,
 because the contract rejects calls that are not valid for the current state. This makes
 RabbitMQ's at-least-once delivery safe.
+
+### 7.4 Code structure
+
+The backend follows clean architecture with manual constructor injection (D-12).
+Dependencies point inward:
+
+| Layer | Package | Depends on |
+| --- | --- | --- |
+| Domain | `internal/domain` | Standard library only |
+| Use cases | `internal/usecase/...` | Domain, and the ports (interfaces) each use case declares |
+| Repositories | `internal/repository` | Use-case ports, generic infrastructure interfaces |
+| Delivery | `internal/delivery/http` (Gin), `internal/delivery/worker` (queue consumers) | Use cases, through interfaces |
+| Infrastructure | `internal/infrastructure/{database,cache,queue,logger}` | Driver libraries |
+| Composition root | `internal/bootstrap`, `cmd/api`, `cmd/worker` | Everything; the only place concrete technologies are chosen |
+
+Infrastructure packages are named after their role, not their technology.
+`cache.Store`, `queue.Publisher` and `queue.Subscriber` are generic interfaces.
+PostgreSQL, Redis and RabbitMQ appear only in the implementation files
+(`database/postgres.go`, `cache/redis.go`, `queue/rabbitmq.go`) and in `bootstrap`.
+One exception: `database.Querier` uses pgx types, because it must match the `DBTX`
+interface that sqlc generates for pgx. Repositories built on sqlc therefore depend on
+pgx too, and replacing PostgreSQL also means regenerating them.
+
+Logging uses `log/slog`: JSON in production, text in development. Every record about an
+HTTP request or a queue message carries its `request_id`, which is passed from the
+`X-Request-ID` header into queue message headers. Errors are logged once, by the boundary
+that handles them (HTTP access log, queue consumer, scheduler). Request bodies, query
+strings, tokens, signatures and OTP codes are never logged; as a safety net, attributes
+with sensitive keys are redacted.
 
 ## 8. Trust boundaries
 

@@ -19,6 +19,7 @@ consequences, including the trade-offs we accept.
 | [D-09](#d-09--funds-arrive-through-1click-directly-into-the-contract) | Funds arrive through 1Click directly into the contract | 2026-11-08 | Pending mainnet test | R-08 |
 | [D-10](#d-10--one-set-of-status-names-across-contract-and-api) | One set of status names across contract and API | 2026-11-08 | Accepted | — |
 | [D-11](#d-11--testnet-for-contract-development-mainnet-for-1click) | Testnet for contract development, mainnet for 1Click | 2026-11-07 | Accepted | R-08 |
+| [D-12](#d-12--backend-stack-and-layering) | Backend stack and layering | 2026-11-08 | Accepted | — |
 
 ---
 
@@ -232,3 +233,31 @@ and frontend.
 **Consequences.**
 - All contract behaviour can be reproduced on testnet without spending money.
 - The cross-chain funding step can only be reproduced on mainnet; `dry: true` quotes show it without sending funds.
+
+## D-12 — Backend stack and layering
+
+**Context.** The backend serves the REST API and runs the jobs (architecture.md §7). A
+small team builds it during the hackathon, so it has to be quick to extend, easy to
+read, and testable without running every dependency. Some infrastructure choices, such
+as the queue, may change later.
+
+**Decision.**
+- Go with Gin for HTTP. The API (`cmd/api`) and the worker (`cmd/worker`: scheduler and queue consumers) are separate binaries built from the same module and container image.
+- Clean architecture: domain → use cases → repositories and delivery → composition root (architecture.md §7.4). Each use case declares the interfaces it needs, and `internal/bootstrap` wires the implementations by hand (constructor injection, no DI framework or code generation).
+- Infrastructure packages are named after their role (`database`, `cache`, `queue`) and expose generic interfaces. Replacing a technology only changes that package and `bootstrap`, except the database: `database.Querier` uses pgx types to match sqlc's generated code, so replacing PostgreSQL also means regenerating the repositories.
+- PostgreSQL through pgx. Queries are written in SQL and compiled to type-safe Go by sqlc. Schema changes are goose migrations, run explicitly (`make migrate-up`), never at startup.
+- Redis for short-lived state with a TTL (login nonces, OTP rate limits). RabbitMQ for jobs as described in architecture.md §7.3, with a retry queue and a dead-letter queue per topic.
+- `log/slog` for structured logging. Request IDs are propagated through HTTP and queue messages, and sensitive attribute keys are redacted.
+
+**Alternatives.**
+- A DI container (uber-go/fx) or compile-time DI (google/wire): less wiring code, but more indirection than the project needs today.
+- GORM instead of sqlc: less SQL to write, but queries are less explicit and mistakes surface at runtime instead of at generation time.
+- zap or zerolog: faster, but slog is in the standard library and fast enough here.
+- One binary for the API and jobs: simpler to deploy, but the two cannot be scaled or restarted separately.
+- Running migrations at startup: convenient, but replicas can race, and a bad migration blocks every deploy.
+
+**Consequences.**
+- Business logic is tested with in-memory fakes; only the infrastructure adapters need the real services (`make test-integration`).
+- A feature touches several small packages (domain, use case, repository, handler, bootstrap). That is more files than a single-package design, in exchange for clear boundaries.
+- sqlc must be re-run after a query changes, and the generated code is committed.
+- Developers need Docker (or local PostgreSQL, Redis and RabbitMQ), goose, and sqlc.
