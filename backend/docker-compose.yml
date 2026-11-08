@@ -1,0 +1,90 @@
+# Local development dependencies.
+#   docker compose up -d --wait               # postgres, redis, rabbitmq
+#   docker compose --profile app up --build   # + api and worker built from the Dockerfile
+# Credentials below are for local development only.
+name: vecrow
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: vecrow
+      POSTGRES_PASSWORD: vecrow
+      POSTGRES_DB: vecrow
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # PostgreSQL 18 images keep data under /var/lib/postgresql/<major>/.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vecrow -d vecrow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: vecrow
+      RABBITMQ_DEFAULT_PASS: vecrow
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    profiles: [app]
+    build: .
+    image: vecrow-backend:dev
+    command: ["/app/api"]
+    environment: &app-env
+      APP_ENV: development
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+      DATABASE_URL: postgres://vecrow:vecrow@postgres:5432/vecrow?sslmode=disable
+      CACHE_URL: redis://redis:6379/0
+      QUEUE_URL: amqp://vecrow:vecrow@rabbitmq:5672/
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    profiles: [app]
+    build: .
+    image: vecrow-backend:dev
+    command: ["/app/worker"]
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  redis-data:
+  rabbitmq-data:
