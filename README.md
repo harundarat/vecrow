@@ -80,9 +80,10 @@ never buy NEAR for gas.
 ### Prerequisites
 
 - Rust + `cargo-near` (contracts)
-- Go (backend)
+- Go 1.27+ (backend), with [goose](https://github.com/pressly/goose) for migrations and
+  [sqlc](https://sqlc.dev) for query code generation
 - Node.js (frontend)
-- PostgreSQL and RabbitMQ
+- PostgreSQL, Redis and RabbitMQ (or Docker, to run them with `docker compose`)
 - A NEAR testnet account for the relayer and backend
 
 > TODO: exact versions.
@@ -103,8 +104,18 @@ cd contracts
 
 ```sh
 cd backend
-# TODO: go mod download, migrate, and run commands
+cp .env.example .env
+make compose-up     # PostgreSQL, Redis and RabbitMQ in Docker
+make migrate-up     # needs goose: go install github.com/pressly/goose/v3/cmd/goose@latest
+make run-api        # http://localhost:8080 — GET /readyz checks the database and cache
+make run-worker     # scheduler + queue consumers
+make test           # unit tests; `make test-integration` also needs `make compose-up`
 ```
+
+`make help` lists every target. After adding or changing a query in
+`internal/repository/queries/`, run `make sqlc`
+(install: `go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`).
+`docker compose --profile app up --build` runs the API and worker from the container image.
 
 ### Frontend
 
