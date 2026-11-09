@@ -62,6 +62,8 @@ services:
       DATABASE_URL: postgres://vecrow:vecrow@postgres:5432/vecrow?sslmode=disable
       CACHE_URL: redis://redis:6379/0
       QUEUE_URL: amqp://vecrow:vecrow@rabbitmq:5672/
+      AUTH_DOMAIN: localhost:5173
+      NEAR_RPC_URL: https://rpc.testnet.near.org
     ports:
       - "${API_PORT:-8080}:8080"
     depends_on:

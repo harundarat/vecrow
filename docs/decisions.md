@@ -20,6 +20,7 @@ consequences, including the trade-offs we accept.
 | [D-10](#d-10--one-set-of-status-names-across-contract-and-api) | One set of status names across contract and API | 2026-11-08 | Accepted | — |
 | [D-11](#d-11--testnet-for-contract-development-mainnet-for-1click) | Testnet for contract development, mainnet for 1Click | 2026-11-07 | Accepted | R-08 |
 | [D-12](#d-12--backend-stack-and-layering) | Backend stack and layering | 2026-11-08 | Accepted | — |
+| [D-13](#d-13--wallet-login-plain-text-challenge-and-opaque-bearer-sessions) | Wallet login: plain-text challenge and opaque bearer sessions | 2026-11-09 | Accepted | R-13, R-14 |
 
 ---
 
@@ -261,3 +262,39 @@ as the queue, may change later.
 - A feature touches several small packages (domain, use case, repository, handler, bootstrap). That is more files than a single-package design, in exchange for clear boundaries.
 - sqlc must be re-run after a query changes, and the generated code is committed.
 - Developers need Docker (or local PostgreSQL, Redis and RabbitMQ), goose, and sqlc.
+
+## D-13 — Wallet login: plain-text challenge and opaque bearer sessions
+
+**Context.** Users log in and link further wallets by signing with an EVM, Solana or NEAR
+wallet (R-13, R-14). Each wallet family signs differently, and the frontend is a single-page
+app on its own origin.
+
+**Decision.**
+- One plain-text message, built by the backend and returned with the nonce, is signed for
+  login and for linking alike. It names `AUTH_DOMAIN`, the wallet, the nonce and the
+  expiry. NEAR signs it through NEP-413 with `AUTH_DOMAIN` as the recipient.
+- The backend stores the message with the nonce and verifies the signature over exactly that
+  text. A nonce is consumed before the signature is checked, so each nonce allows one attempt.
+- For NEAR, the signing key must be a full access key of the account, checked over RPC. An
+  implicit account that is not yet on chain is accepted when its ID is the hex of the key.
+- The first login creates the account with a generated username (`user_` + 8 random
+  characters), which the user can change.
+- Sessions are opaque random tokens sent as `Authorization: Bearer`. Redis stores only the
+  SHA-256 of the token, with a TTL (`AUTH_SESSION_TTL`, default 24 hours). Logout deletes it.
+
+**Alternatives.**
+- SIWE (EIP-4361) and SIWS message formats: wallets render them as sign-in requests and check
+  the domain, but they are two more formats to build and parse; the plain text keeps one format
+  for all three wallet families.
+- Choosing a username at sign-up: one more step before the first login.
+- JWT sessions: no store lookup per request, but logout and revocation need a deny-list, and a
+  signing key has to be managed.
+- HttpOnly cookies: not readable by scripts, but a cross-origin SPA then needs credentialed
+  CORS and CSRF protection.
+
+**Consequences.**
+- EVM smart-contract wallets (EIP-1271, ERC-4337) cannot log in, consistent with the contract's
+  `ecrecover` check (D-02).
+- Logging in with a NEAR named account depends on the NEAR RPC being available.
+- The token is readable by frontend scripts, so XSS must be prevented on the frontend.
+- Sessions are not revoked when a wallet is unlinked; they belong to the account.

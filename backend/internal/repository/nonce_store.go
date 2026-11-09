@@ -35,12 +35,21 @@ func NewNonceStore(c cache.Store) *NonceStore {
 }
 
 type nonceRecord struct {
-	Scheme  string `json:"scheme"`
-	Address string `json:"address"`
+	Scheme    string    `json:"scheme"`
+	Address   string    `json:"address"`
+	ExpiresAt time.Time `json:"expires_at"`
+	// Message is stored as issued, so verification checks exactly the text
+	// the wallet was asked to sign.
+	Message string `json:"message"`
 }
 
 func (s *NonceStore) Save(ctx context.Context, n domain.Nonce, ttl time.Duration) error {
-	b, err := json.Marshal(nonceRecord{Scheme: string(n.Wallet.Scheme), Address: n.Wallet.Address})
+	b, err := json.Marshal(nonceRecord{
+		Scheme:    string(n.Wallet.Scheme),
+		Address:   n.Wallet.Address,
+		ExpiresAt: n.ExpiresAt,
+		Message:   n.Message,
+	})
 	if err != nil {
 		return fmt.Errorf("nonce store: encode: %w", err)
 	}
@@ -52,4 +61,24 @@ func (s *NonceStore) Save(ctx context.Context, n domain.Nonce, ttl time.Duration
 		return fmt.Errorf("nonce store: %w", ErrNonceExists)
 	}
 	return nil
+}
+
+func (s *NonceStore) Consume(ctx context.Context, value string) (domain.Nonce, error) {
+	b, err := s.cache.GetDel(ctx, nonceKeyPrefix+value)
+	if errors.Is(err, cache.ErrNotFound) {
+		return domain.Nonce{}, auth.ErrNonceNotFound
+	}
+	if err != nil {
+		return domain.Nonce{}, fmt.Errorf("nonce store: %w", err)
+	}
+	var rec nonceRecord
+	if err := json.Unmarshal(b, &rec); err != nil {
+		return domain.Nonce{}, fmt.Errorf("nonce store: decode: %w", err)
+	}
+	return domain.Nonce{
+		Value:     value,
+		Wallet:    domain.Wallet{Scheme: domain.WalletScheme(rec.Scheme), Address: rec.Address},
+		ExpiresAt: rec.ExpiresAt,
+		Message:   rec.Message,
+	}, nil
 }

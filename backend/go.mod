@@ -4,14 +4,17 @@ go 1.27.1
 
 require (
 	github.com/caarlos0/env/v11 v11.4.2
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
 	github.com/gin-contrib/cors v1.7.10
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-playground/validator/v10 v10.30.6
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/joho/godotenv v1.5.1
+	github.com/mr-tron/base58 v1.3.0
 	github.com/rabbitmq/amqp091-go v1.16.0
 	github.com/redis/go-redis/v9 v9.23.0
+	golang.org/x/crypto v0.58.0
 	golang.org/x/sync v0.24.0
 )
 
@@ -44,7 +47,6 @@ require (
 	go.mongodb.org/mongo-driver/v2 v2.8.0 // indirect
 	go.uber.org/atomic v1.12.0 // indirect
 	golang.org/x/arch v0.29.0 // indirect
-	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect

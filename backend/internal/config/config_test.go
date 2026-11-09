@@ -17,6 +17,7 @@ var configKeys = []string{
 	"DATABASE_URL", "DATABASE_MAX_CONNS", "DATABASE_MIN_CONNS", "DATABASE_MAX_CONN_LIFETIME",
 	"DATABASE_MAX_CONN_IDLE_TIME", "CACHE_URL", "QUEUE_URL", "QUEUE_PREFETCH", "QUEUE_MAX_RETRIES",
 	"QUEUE_RETRY_DELAY", "QUEUE_HANDLER_TIMEOUT", "SCHEDULER_INTERVAL", "AUTH_NONCE_TTL",
+	"AUTH_DOMAIN", "AUTH_SESSION_TTL", "NEAR_RPC_URL",
 }
 
 func clearEnv(t *testing.T) {
@@ -45,6 +46,9 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.Auth.NonceTTL != 5*time.Minute {
 		t.Errorf("nonce ttl = %v, want 5m", cfg.Auth.NonceTTL)
+	}
+	if cfg.Auth.SessionTTL != 24*time.Hour {
+		t.Errorf("session ttl = %v, want 24h", cfg.Auth.SessionTTL)
 	}
 }
 
@@ -110,7 +114,7 @@ func TestLoad_CORSOrigins(t *testing.T) {
 func TestLoad_RejectsNonPositiveDurations(t *testing.T) {
 	for _, key := range []string{
 		"HTTP_READ_TIMEOUT", "HTTP_WRITE_TIMEOUT", "HTTP_IDLE_TIMEOUT", "HTTP_SHUTDOWN_TIMEOUT",
-		"DATABASE_MAX_CONN_LIFETIME", "DATABASE_MAX_CONN_IDLE_TIME",
+		"DATABASE_MAX_CONN_LIFETIME", "DATABASE_MAX_CONN_IDLE_TIME", "AUTH_SESSION_TTL",
 	} {
 		for _, v := range []string{"0s", "-1s"} {
 			t.Run(key+"="+v, func(t *testing.T) {
@@ -121,5 +125,29 @@ func TestLoad_RejectsNonPositiveDurations(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestLoad_AuthAndNEAR(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		setRequired(t)
+		t.Setenv("AUTH_DOMAIN", "app.vecrow.xyz")
+		t.Setenv("NEAR_RPC_URL", "https://rpc.testnet.near.org")
+		cfg, err := config.Load()
+		if err != nil || cfg.Auth.Domain != "app.vecrow.xyz" || cfg.NEAR.RPCURL != "https://rpc.testnet.near.org" {
+			t.Fatalf("cfg = %+v %+v, err = %v", cfg.Auth, cfg.NEAR, err)
+		}
+	})
+	for key, bad := range map[string]string{
+		"AUTH_DOMAIN":  "vecrow.xyz\nWallet: 0xattacker",
+		"NEAR_RPC_URL": "rpc.testnet.near.org",
+	} {
+		t.Run("rejects "+key, func(t *testing.T) {
+			setRequired(t)
+			t.Setenv(key, bad)
+			if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), key) {
+				t.Fatalf("error = %v, want %s error", err, key)
+			}
+		})
 	}
 }

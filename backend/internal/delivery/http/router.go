@@ -26,8 +26,13 @@ const APIPrefix = "/api/v1"
 // maxBodyBytes caps request bodies.
 const maxBodyBytes = 1 << 20
 
-// nonceRateLimit is the number of nonces one client IP may request per minute.
-const nonceRateLimit = 20
+// Per-client-IP limits for unauthenticated or signature-checking endpoints:
+// nonces are stored in the cache, and verifying a NEAR signature calls the
+// NEAR RPC.
+const (
+	nonceRateLimit  = 20
+	verifyRateLimit = 20 // shared by /auth/verify and POST /me/wallets
+)
 
 type RouterConfig struct {
 	CORSAllowedOrigins []string
@@ -39,6 +44,9 @@ type RouterConfig struct {
 type Handlers struct {
 	Health *handler.HealthHandler
 	Auth   *handler.AuthHandler
+	Me     *handler.MeHandler
+	// Sessions authenticates bearer tokens for the routes that need a session.
+	Sessions middleware.SessionAuthenticator
 }
 
 func NewRouter(cfg RouterConfig, log *slog.Logger, h Handlers) (*gin.Engine, error) {
@@ -73,12 +81,21 @@ func NewRouter(cfg RouterConfig, log *slog.Logger, h Handlers) (*gin.Engine, err
 	r.GET("/healthz", h.Health.Live)
 	r.GET("/readyz", h.Health.Ready)
 
+	requireSession := middleware.RequireSession(h.Sessions)
+	verifyLimit := middleware.RateLimit(verifyRateLimit, time.Minute)
+
 	v1 := r.Group(APIPrefix)
 	{
-		// Nonces are unauthenticated and each one is stored in the cache, so
-		// issuance is rate limited per client IP.
 		auth := v1.Group("/auth")
 		auth.POST("/nonce", middleware.RateLimit(nonceRateLimit, time.Minute), h.Auth.IssueNonce)
+		auth.POST("/verify", verifyLimit, h.Auth.Verify)
+		auth.POST("/logout", requireSession, h.Auth.Logout)
+
+		me := v1.Group("/me", requireSession)
+		me.GET("", h.Me.Get)
+		me.PATCH("", h.Me.Update)
+		me.POST("/wallets", verifyLimit, h.Me.LinkWallet)
+		me.DELETE("/wallets/:id", h.Me.UnlinkWallet)
 	}
 
 	for _, rt := range r.Routes() {

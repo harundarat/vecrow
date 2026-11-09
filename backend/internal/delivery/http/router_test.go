@@ -30,6 +30,8 @@ func (f fakeIssuer) Issue(context.Context, string, string) (domain.Nonce, error)
 	return f.nonce, f.err
 }
 
+func (fakeIssuer) Recipient() string { return "localhost:5173" }
+
 type fakeChecker struct {
 	name string
 	err  error
@@ -39,8 +41,10 @@ func (f fakeChecker) Name() string                { return f.name }
 func (f fakeChecker) Check(context.Context) error { return f.err }
 
 type testServer struct {
-	engine *gin.Engine
-	logs   *bytes.Buffer
+	engine   *gin.Engine
+	logs     *bytes.Buffer
+	login    *fakeLogin
+	accounts *fakeAccountUseCase
 }
 
 func newTestServer(t *testing.T, issuer fakeIssuer, checkers ...handler.Checker) *testServer {
@@ -50,18 +54,21 @@ func newTestServer(t *testing.T, issuer fakeIssuer, checkers ...handler.Checker)
 	if err != nil {
 		t.Fatal(err)
 	}
+	login, accounts := &fakeLogin{}, &fakeAccountUseCase{}
 	engine, err := deliveryhttp.NewRouter(
 		deliveryhttp.RouterConfig{CORSAllowedOrigins: []string{"http://localhost:5173"}},
 		log,
 		deliveryhttp.Handlers{
-			Health: handler.NewHealthHandler(log, time.Second, checkers...),
-			Auth:   handler.NewAuthHandler(issuer),
+			Health:   handler.NewHealthHandler(log, time.Second, checkers...),
+			Auth:     handler.NewAuthHandler(issuer, login),
+			Me:       handler.NewMeHandler(accounts),
+			Sessions: fakeSessions{},
 		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &testServer{engine: engine, logs: &logs}
+	return &testServer{engine: engine, logs: &logs, login: login, accounts: accounts}
 }
 
 func (s *testServer) do(method, path, body string, headers ...string) *httptest.ResponseRecorder {
@@ -311,8 +318,10 @@ func TestNewRouter_MalformedCORSOriginIsAnError(t *testing.T) {
 		deliveryhttp.RouterConfig{CORSAllowedOrigins: []string{"localhost:5173"}},
 		log,
 		deliveryhttp.Handlers{
-			Health: handler.NewHealthHandler(log, time.Second),
-			Auth:   handler.NewAuthHandler(fakeIssuer{}),
+			Health:   handler.NewHealthHandler(log, time.Second),
+			Auth:     handler.NewAuthHandler(fakeIssuer{}, &fakeLogin{}),
+			Me:       handler.NewMeHandler(&fakeAccountUseCase{}),
+			Sessions: fakeSessions{},
 		},
 	)
 	if err == nil {

@@ -31,6 +31,7 @@ type Config struct {
 	Queue     Queue
 	Scheduler Scheduler
 	Auth      Auth
+	NEAR      NEAR
 }
 
 type App struct {
@@ -85,6 +86,15 @@ type Scheduler struct {
 
 type Auth struct {
 	NonceTTL time.Duration `env:"AUTH_NONCE_TTL" envDefault:"5m"`
+	// Domain names the app in login messages and is the NEP-413 recipient.
+	// Required by the API only.
+	Domain     string        `env:"AUTH_DOMAIN"`
+	SessionTTL time.Duration `env:"AUTH_SESSION_TTL" envDefault:"24h"`
+}
+
+type NEAR struct {
+	// RPCURL is the NEAR JSON-RPC endpoint. Required by the API only.
+	RPCURL string `env:"NEAR_RPC_URL"`
 }
 
 // Load reads an optional .env file from the working directory, then parses
@@ -161,6 +171,17 @@ func (c Config) validate() error {
 	}
 	if c.Auth.NonceTTL <= 0 {
 		errs = append(errs, errors.New("AUTH_NONCE_TTL must be > 0"))
+	}
+	if c.Auth.SessionTTL <= 0 {
+		errs = append(errs, errors.New("AUTH_SESSION_TTL must be > 0"))
+	}
+	// The domain is printed in the message users sign; whitespace or control
+	// characters could forge extra lines.
+	if strings.ContainsFunc(c.Auth.Domain, func(r rune) bool { return r <= ' ' || r == 0x7f }) {
+		errs = append(errs, fmt.Errorf("AUTH_DOMAIN must not contain spaces or control characters, got %q", c.Auth.Domain))
+	}
+	if c.NEAR.RPCURL != "" && !strings.HasPrefix(c.NEAR.RPCURL, "http://") && !strings.HasPrefix(c.NEAR.RPCURL, "https://") {
+		errs = append(errs, errors.New("NEAR_RPC_URL must start with http:// or https://"))
 	}
 	return errors.Join(errs...)
 }
