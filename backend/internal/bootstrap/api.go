@@ -13,12 +13,17 @@ import (
 	deliveryhttp "github.com/harundarat/vecrow/backend/internal/delivery/http"
 	"github.com/harundarat/vecrow/backend/internal/delivery/http/handler"
 	"github.com/harundarat/vecrow/backend/internal/infrastructure/database"
+	"github.com/harundarat/vecrow/backend/internal/infrastructure/nearrpc"
 	"github.com/harundarat/vecrow/backend/internal/repository"
 	"github.com/harundarat/vecrow/backend/internal/usecase"
 	"github.com/harundarat/vecrow/backend/internal/usecase/auth"
 )
 
-const readinessTimeout = 2 * time.Second
+const (
+	readinessTimeout = 2 * time.Second
+	// nearRPCTimeout bounds each NEAR RPC call made while verifying a login.
+	nearRPCTimeout = 10 * time.Second
+)
 
 var _ usecase.Transactor = (*database.Postgres)(nil)
 
@@ -32,6 +37,13 @@ type API struct {
 
 // NewAPI opens the database and cache and wires the HTTP stack.
 func NewAPI(ctx context.Context, cfg config.Config, log *slog.Logger) (_ App, err error) {
+	if cfg.Auth.Domain == "" {
+		return nil, errors.New("AUTH_DOMAIN is required for the api")
+	}
+	if cfg.NEAR.RPCURL == "" {
+		return nil, errors.New("NEAR_RPC_URL is required for the api")
+	}
+
 	a := &API{log: log, shutdownTimeout: cfg.HTTP.ShutdownTimeout, closers: closers{log: log}}
 	defer func() {
 		if err != nil {
@@ -45,8 +57,15 @@ func NewAPI(ctx context.Context, cfg config.Config, log *slog.Logger) (_ App, er
 	}
 
 	nonceStore := repository.NewNonceStore(kv)
+	sessionStore := repository.NewSessionStore(kv)
+	accounts := repository.NewAccountRepository(db)
+	nearKeys := repository.NewNEARAccessKeys(nearrpc.New(cfg.NEAR.RPCURL, nearRPCTimeout))
 
-	nonceService := auth.NewNonceService(nonceStore, cfg.Auth.NonceTTL)
+	nonceService := auth.NewNonceService(nonceStore, cfg.Auth.NonceTTL, cfg.Auth.Domain)
+	verifier := auth.NewWalletVerifier(cfg.Auth.Domain, nearKeys)
+	sessionService := auth.NewSessionService(sessionStore, cfg.Auth.SessionTTL)
+	loginService := auth.NewLoginService(nonceStore, verifier, accounts, db, sessionService)
+	accountService := auth.NewAccountService(nonceStore, verifier, accounts, db)
 
 	router, err := deliveryhttp.NewRouter(
 		deliveryhttp.RouterConfig{
@@ -55,8 +74,10 @@ func NewAPI(ctx context.Context, cfg config.Config, log *slog.Logger) (_ App, er
 		},
 		log,
 		deliveryhttp.Handlers{
-			Health: handler.NewHealthHandler(log, readinessTimeout, db, kv),
-			Auth:   handler.NewAuthHandler(nonceService),
+			Health:   handler.NewHealthHandler(log, readinessTimeout, db, kv),
+			Auth:     handler.NewAuthHandler(nonceService, loginService),
+			Me:       handler.NewMeHandler(accountService),
+			Sessions: sessionService,
 		},
 	)
 	if err != nil {
