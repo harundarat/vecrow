@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/hex"
 	"regexp"
 	"strings"
 	"time"
@@ -114,4 +115,31 @@ type Nonce struct {
 	Value     string // hex-encoded, NonceSize bytes
 	Wallet    Wallet
 	ExpiresAt time.Time
+	// Message is the exact text the wallet signs (see LoginMessage).
+	Message string
+}
+
+// DecodeNonce validates a nonce value received from a client and returns its
+// raw bytes (NEP-413 signs them).
+func DecodeNonce(value string) ([NonceSize]byte, error) {
+	var out [NonceSize]byte
+	if len(value) != 2*NonceSize || strings.ToLower(value) != value {
+		return out, InvalidArgument("nonce must be %d lowercase hex characters", 2*NonceSize)
+	}
+	if _, err := hex.Decode(out[:], []byte(value)); err != nil {
+		return out, InvalidArgument("nonce must be %d lowercase hex characters", 2*NonceSize)
+	}
+	return out, nil
+}
+
+// LoginMessage is the plain-text message a wallet signs to prove it controls
+// n.Wallet. appDomain names the site so users can spot a phishing request.
+// It must be deterministic: the verify step checks the signature over the
+// message stored when the nonce was issued.
+func LoginMessage(appDomain string, n Nonce) string {
+	return appDomain + " wants you to sign in with your wallet.\n\n" +
+		"Wallet: " + n.Wallet.Address + "\n" +
+		"Nonce: " + n.Value + "\n" +
+		"Expires: " + n.ExpiresAt.UTC().Format(time.RFC3339) + "\n\n" +
+		"Signing is free and does not send a transaction."
 }
