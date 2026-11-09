@@ -10,6 +10,7 @@ import (
 	"github.com/harundarat/vecrow/backend/internal/domain"
 	"github.com/harundarat/vecrow/backend/internal/infrastructure/cache"
 	"github.com/harundarat/vecrow/backend/internal/repository"
+	"github.com/harundarat/vecrow/backend/internal/usecase/auth"
 )
 
 // memoryCache is an in-memory cache.Store for tests.
@@ -107,5 +108,27 @@ func TestNonceStore_Save_CacheError(t *testing.T) {
 	err := repository.NewNonceStore(mem).Save(context.Background(), testNonce(), time.Minute)
 	if !errors.Is(err, mem.err) {
 		t.Fatalf("error = %v, want wrapped cache error", err)
+	}
+}
+
+func TestNonceStore_Consume(t *testing.T) {
+	mem := newMemoryCache()
+	store := repository.NewNonceStore(mem)
+	n := testNonce()
+	n.ExpiresAt = time.Date(2026, 11, 8, 12, 5, 0, 0, time.UTC)
+	n.Message = "localhost:5173 wants you to sign in with your wallet."
+	if err := store.Save(context.Background(), n, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := store.Consume(context.Background(), n.Value)
+	if err != nil {
+		t.Fatalf("Consume: %v", err)
+	}
+	if got.Value != n.Value || got.Wallet != n.Wallet || got.Message != n.Message || !got.ExpiresAt.Equal(n.ExpiresAt) {
+		t.Errorf("Consume = %+v, want %+v", got, n)
+	}
+	if _, err := store.Consume(context.Background(), n.Value); !errors.Is(err, auth.ErrNonceNotFound) {
+		t.Fatalf("second Consume error = %v, want ErrNonceNotFound", err)
 	}
 }
