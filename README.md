@@ -112,6 +112,9 @@ make run-worker     # scheduler + queue consumers
 make test           # unit tests; `make test-integration` also needs `make compose-up`
 ```
 
+The API also needs `AUTH_DOMAIN` and `NEAR_RPC_URL` (see `.env.example`); wallet login
+for the frontend is described in [architecture.md §7.5](docs/architecture.md#75-wallet-login-r-13-r-14).
+
 `make help` lists every target. After adding or changing a query in
 `internal/repository/queries/`, run `make sqlc`
 (install: `go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`).

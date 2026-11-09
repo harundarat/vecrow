@@ -98,8 +98,8 @@ wallet is lost · outright rejection of a milestone by the client.
 | R-10 | Client payment page | Frontend | Planned | | |
 | R-11 | Freelancer dashboard | Frontend | Planned | | |
 | R-12 | CSV export | Backend | Planned | | |
-| R-13 | Wallet sign-up and login | Backend + frontend | Planned | | |
-| R-14 | Profile, multiple wallets, email | Backend + frontend | Planned | | |
+| R-13 | Wallet sign-up and login | Backend + frontend | Partial | [login.go](../backend/internal/usecase/auth/login.go), [walletsig](../backend/internal/walletsig/) | [login_test.go](../backend/internal/usecase/auth/login_test.go), [walletsig_test.go](../backend/internal/walletsig/walletsig_test.go) |
+| R-14 | Profile, multiple wallets, email | Backend + frontend | Partial | [account.go](../backend/internal/usecase/auth/account.go) | [account_test.go](../backend/internal/usecase/auth/account_test.go), [account_repository_integration_test.go](../backend/internal/repository/account_repository_integration_test.go) |
 | R-15 | Link client to escrow | Backend | Planned | | |
 | R-16 | "My escrows" page | Backend + frontend | Planned | | |
 | R-17 | Request milestone revision | Contract | Planned | | |
@@ -269,17 +269,23 @@ The backend issues a nonce; the user signs a login message (NEP-413, EIP-191, or
 ed25519). The first login creates an account with a unique username. Sessions are
 expiring tokens.
 
-- [ ] A reused nonce or an invalid signature is rejected.
-- [ ] A second login with the same wallet opens the same account.
-- [ ] A duplicate username is rejected.
+- [x] A reused nonce or an invalid signature is rejected.
+- [x] A second login with the same wallet opens the same account.
+- [x] A duplicate username is rejected.
+
+*Partial:* the backend is done (flow in architecture.md §7.5, D-13); the frontend is not.
+The username is generated at first login and can be changed with `PATCH /me`.
 
 #### R-14 — Profile, multiple wallets, email
 
 An account can link additional wallets (each proven by its own signature) and an
 optional email verified by OTP.
 
-- [ ] A wallet already owned by another account is rejected.
+- [x] A wallet already owned by another account is rejected.
 - [ ] An unverified email is not used to match client invitations.
+
+*Partial:* linking and unlinking wallets is done in the backend; email and its OTP
+verification are not built yet, nor is the frontend.
 
 #### R-15 — Link client to escrow
 

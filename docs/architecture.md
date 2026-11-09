@@ -63,7 +63,7 @@ flowchart TB
 | Layer | Technology | Notes |
 | --- | --- | --- |
 | Contract | Rust, near-sdk, cargo-near, near-workspaces | Unit and integration tests run against a mock NEP-141 token on a local sandbox / testnet |
-| Backend | Go (Gin), PostgreSQL, Redis, RabbitMQ | 1Click is called over its REST API; NEAR transactions (relayer, `storage_deposit`, jobs) are sent over NEAR JSON-RPC. Jobs (funding watcher, auto-release, payout retry) are queued in RabbitMQ and processed by workers. Redis holds short-lived state with a TTL (login nonces, OTP rate limits). Layering in section 7.4 |
+| Backend | Go (Gin), PostgreSQL, Redis, RabbitMQ | 1Click is called over its REST API; NEAR transactions (relayer, `storage_deposit`, jobs) are sent over NEAR JSON-RPC. Jobs (funding watcher, auto-release, payout retry) are queued in RabbitMQ and processed by workers. Redis holds short-lived state with a TTL (login nonces, sessions, OTP rate limits). Layering in section 7.4 |
 | Frontend | React, Vite, NEAR Wallet Selector | Single-page app that talks only to the backend API. EVM and Solana wallets are only needed for signing; paying is a transfer to a deposit address from any wallet |
 
 ## 4. Money flow
@@ -287,6 +287,46 @@ HTTP request or a queue message carries its `request_id`, which is passed from t
 that handles them (HTTP access log, queue consumer, scheduler). Request bodies, query
 strings, tokens, signatures and OTP codes are never logged; as a safety net, attributes
 with sensitive keys are redacted.
+
+### 7.5 Wallet login (R-13, R-14)
+
+Login and wallet linking use the same challenge (D-13):
+
+1. `POST /auth/nonce {scheme, address}` returns `{nonce, message, recipient, expires_at}`.
+   `scheme` is `eip191` (EVM), `ed25519` (Solana) or `nep413` (NEAR). The nonce is valid
+   for `AUTH_NONCE_TTL` and can be used once.
+2. The wallet signs `message` exactly as returned. It is plain text:
+
+   ```
+   {AUTH_DOMAIN} wants you to sign in with your wallet.
+
+   Wallet: {address}
+   Nonce: {nonce}
+   Expires: {expires_at}
+
+   Signing is free and does not send a transaction.
+   ```
+
+3. `POST /auth/verify {nonce, signature, public_key?}` logs in and returns
+   `{token, expires_at, new_account, account}`. The first login creates the account with a
+   generated username (`user_xxxxxxxx`), which `PATCH /me` can change. With a session,
+   `POST /me/wallets` takes the same body and links the wallet to the account instead.
+
+| Scheme | Wallet call | `signature` | `public_key` |
+| --- | --- | --- | --- |
+| `eip191` | `personal_sign(message)` | hex, `0x` + 65 bytes | — |
+| `ed25519` | `signMessage(utf8 bytes of message)` | base58, 64 bytes | — |
+| `nep413` | `signMessage({message, nonce: hex-decoded nonce (32 bytes), recipient})`, no `callbackUrl` | base64, 64 bytes | `ed25519:<base58>` |
+
+For NEAR, the backend also checks over RPC (`NEAR_RPC_URL`) that `public_key` is a full
+access key of the account, because a NEAR account ID is a name, not a key. An implicit
+account (64 hex characters) that is not yet on chain is accepted when it is the hex of
+`public_key`, so users with a NEAR balance of 0 can log in.
+
+The token is sent as `Authorization: Bearer <token>` to `/me` and `/auth/logout`. It is an
+opaque random string; Redis stores only its SHA-256, with the `AUTH_SESSION_TTL` expiry.
+A wallet belongs to at most one account (`UNIQUE (scheme, address)`), and the last wallet
+of an account cannot be unlinked.
 
 ## 8. Trust boundaries
 
