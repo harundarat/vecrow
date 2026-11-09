@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -66,6 +67,27 @@ func TestLogin_FirstLoginCreatesAccount(t *testing.T) {
 	}
 	if _, stored := f.sessions[res.Token]; stored || len(f.sessions) != 1 {
 		t.Errorf("sessions = %v: want one session not keyed by the raw token", f.sessions)
+	}
+}
+
+func TestLogin_LogsSuccessWithoutSecrets(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewJSONHandler(&buf, nil))
+	f := newLoginFixture(nil)
+	sessions := auth.NewSessionService(f.sessions, time.Hour, auth.WithClock(func() time.Time { return fixedNow }))
+	f.svc = auth.NewLoginService(f.nonces, f.verifier, f.accounts, fakeTx{f.accounts}, sessions,
+		auth.WithRandom(bytes.NewReader(bytes.Repeat([]byte{0xab}, 64))), auth.WithLogger(log))
+
+	res, err := f.svc.Login(context.Background(), f.issue(testWallet, nonceValue(1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "login succeeded") || !strings.Contains(out, `"new_account":true`) {
+		t.Errorf("log = %s, want a login record for a new account", out)
+	}
+	if strings.Contains(out, res.Token) || strings.Contains(out, "0xsig") {
+		t.Errorf("log leaks a token or signature: %s", out)
 	}
 }
 

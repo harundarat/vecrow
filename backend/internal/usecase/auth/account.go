@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/harundarat/vecrow/backend/internal/domain"
 	"github.com/harundarat/vecrow/backend/internal/usecase"
@@ -15,10 +16,12 @@ type AccountService struct {
 	verifier SignatureVerifier
 	accounts AccountRepository
 	tx       usecase.Transactor
+	rt       runtime
 }
 
-func NewAccountService(nonces NonceStore, verifier SignatureVerifier, accounts AccountRepository, tx usecase.Transactor) *AccountService {
-	return &AccountService{nonces: nonces, verifier: verifier, accounts: accounts, tx: tx}
+func NewAccountService(nonces NonceStore, verifier SignatureVerifier, accounts AccountRepository,
+	tx usecase.Transactor, opts ...Option) *AccountService {
+	return &AccountService{nonces: nonces, verifier: verifier, accounts: accounts, tx: tx, rt: newRuntime(opts)}
 }
 
 // Get returns the account with its wallets.
@@ -48,6 +51,7 @@ func (s *AccountService) ChangeUsername(ctx context.Context, accountID, username
 	case err != nil:
 		return domain.Account{}, fmt.Errorf("auth: update username: %w", err)
 	}
+	s.rt.log.InfoContext(ctx, "username changed", slog.String("account_id", accountID))
 	return s.Get(ctx, accountID)
 }
 
@@ -62,10 +66,16 @@ func (s *AccountService) LinkWallet(ctx context.Context, accountID string, p Pro
 	linked, err = s.linkWallet(ctx, accountID, wallet)
 	if errors.Is(err, ErrWalletNotFound) {
 		// The owner unlinked the wallet between the insert and the lookup.
+		s.rt.log.DebugContext(ctx, "wallet unlinked during link, retrying",
+			slog.String("account_id", accountID))
 		linked, err = s.linkWallet(ctx, accountID, wallet)
 	}
 	if err != nil {
 		return domain.Account{}, false, err
+	}
+	if linked {
+		s.rt.log.InfoContext(ctx, "wallet linked",
+			slog.String("account_id", accountID), slog.String("scheme", string(wallet.Scheme)))
 	}
 	account, err = s.Get(ctx, accountID)
 	return account, linked, err
@@ -92,7 +102,7 @@ func (s *AccountService) linkWallet(ctx context.Context, accountID string, walle
 // UnlinkWallet removes a wallet from the account. The last wallet cannot be
 // removed: without it the account could no longer log in.
 func (s *AccountService) UnlinkWallet(ctx context.Context, accountID, walletID string) error {
-	return s.tx.WithinTx(ctx, func(ctx context.Context) error {
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		// The lock serialises concurrent unlinks, which could otherwise each
 		// see two wallets and together remove both.
 		if err := s.accounts.LockAccount(ctx, accountID); err != nil {
@@ -117,4 +127,11 @@ func (s *AccountService) UnlinkWallet(ctx context.Context, accountID, walletID s
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	// After the commit, so a rolled-back unlink is never reported.
+	s.rt.log.InfoContext(ctx, "wallet unlinked",
+		slog.String("account_id", accountID), slog.String("wallet_id", walletID))
+	return nil
 }

@@ -8,15 +8,19 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"time"
 
 	"github.com/harundarat/vecrow/backend/internal/domain"
 )
 
-// runtime holds the sources of randomness and time, replaceable in tests.
+// runtime holds the sources of randomness and time, replaceable in tests, and
+// the logger for business events. Errors are never logged here: they are
+// returned and logged once, at the HTTP boundary.
 type runtime struct {
 	random io.Reader
 	now    func() time.Time
+	log    *slog.Logger
 }
 
 // Option configures a service of this package.
@@ -26,8 +30,12 @@ func WithRandom(r io.Reader) Option { return func(rt *runtime) { rt.random = r }
 
 func WithClock(now func() time.Time) Option { return func(rt *runtime) { rt.now = now } }
 
+// WithLogger sets the logger for business events (logins, wallet changes) and
+// for errors that are handled here instead of returned. The default discards.
+func WithLogger(l *slog.Logger) Option { return func(rt *runtime) { rt.log = l } }
+
 func newRuntime(opts []Option) runtime {
-	rt := runtime{random: rand.Reader, now: time.Now}
+	rt := runtime{random: rand.Reader, now: time.Now, log: slog.New(slog.DiscardHandler)}
 	for _, opt := range opts {
 		opt(&rt)
 	}

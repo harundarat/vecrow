@@ -63,9 +63,9 @@ func NewAPI(ctx context.Context, cfg config.Config, log *slog.Logger) (_ App, er
 
 	nonceService := auth.NewNonceService(nonceStore, cfg.Auth.NonceTTL, cfg.Auth.Domain)
 	verifier := auth.NewWalletVerifier(cfg.Auth.Domain, nearKeys)
-	sessionService := auth.NewSessionService(sessionStore, cfg.Auth.SessionTTL)
-	loginService := auth.NewLoginService(nonceStore, verifier, accounts, db, sessionService)
-	accountService := auth.NewAccountService(nonceStore, verifier, accounts, db)
+	sessionService := auth.NewSessionService(sessionStore, cfg.Auth.SessionTTL, auth.WithLogger(log))
+	loginService := auth.NewLoginService(nonceStore, verifier, accounts, db, sessionService, auth.WithLogger(log))
+	accountService := auth.NewAccountService(nonceStore, verifier, accounts, db, auth.WithLogger(log))
 
 	router, err := deliveryhttp.NewRouter(
 		deliveryhttp.RouterConfig{

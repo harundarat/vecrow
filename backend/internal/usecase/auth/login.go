@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 
 	"github.com/harundarat/vecrow/backend/internal/domain"
 	"github.com/harundarat/vecrow/backend/internal/usecase"
@@ -62,12 +63,20 @@ func (s *LoginService) Login(ctx context.Context, p Proof) (LoginResult, error) 
 	if err != nil {
 		return LoginResult{}, err
 	}
+	s.rt.log.InfoContext(ctx, "login succeeded",
+		slog.String("account_id", accountID),
+		slog.String("scheme", string(wallet.Scheme)),
+		slog.Bool("new_account", created))
 	return LoginResult{Token: token, Session: sess, Account: account, NewAccount: created}, nil
 }
 
 // Logout ends the session of token.
 func (s *LoginService) Logout(ctx context.Context, token string) error {
-	return s.sessions.Revoke(ctx, token)
+	if err := s.sessions.Revoke(ctx, token); err != nil {
+		return err
+	}
+	s.rt.log.InfoContext(ctx, "session revoked")
+	return nil
 }
 
 func (s *LoginService) findOrCreateAccount(ctx context.Context, w domain.Wallet) (id string, created bool, err error) {
@@ -95,6 +104,8 @@ func (s *LoginService) findOrCreateAccount(ctx context.Context, w domain.Wallet)
 	})
 	if errors.Is(err, errWalletRace) {
 		// A concurrent first login with this wallet created the account.
+		s.rt.log.DebugContext(ctx, "wallet claimed concurrently, using existing account",
+			slog.String("scheme", string(w.Scheme)))
 		if id, err = s.accounts.FindWalletOwner(ctx, w); err != nil {
 			return "", false, fmt.Errorf("auth: find wallet owner: %w", err)
 		}
