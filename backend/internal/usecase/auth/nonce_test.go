@@ -27,6 +27,10 @@ func (f *fakeStore) Save(_ context.Context, n domain.Nonce, ttl time.Duration) e
 	return nil
 }
 
+func (f *fakeStore) Consume(context.Context, string) (domain.Nonce, error) {
+	return domain.Nonce{}, auth.ErrNonceNotFound
+}
+
 type failingReader struct{}
 
 func (failingReader) Read([]byte) (int, error) { return 0, errors.New("entropy exhausted") }
@@ -38,7 +42,7 @@ func newService(store auth.NonceStore, opts ...auth.Option) *auth.NonceService {
 		auth.WithRandom(bytes.NewReader(bytes.Repeat([]byte{0xab}, domain.NonceSize))),
 		auth.WithClock(func() time.Time { return fixedNow }),
 	}
-	return auth.NewNonceService(store, 5*time.Minute, append(defaults, opts...)...)
+	return auth.NewNonceService(store, 5*time.Minute, "localhost:5173", append(defaults, opts...)...)
 }
 
 func TestNonceService_Issue(t *testing.T) {
@@ -58,6 +62,12 @@ func TestNonceService_Issue(t *testing.T) {
 	}
 	if got.Wallet.Address != "0xabcdef0123456789abcdef0123456789abcdef01" {
 		t.Errorf("address not normalised: %q", got.Wallet.Address)
+	}
+	if got.Message != domain.LoginMessage("localhost:5173", got) || !strings.Contains(got.Message, got.Wallet.Address) {
+		t.Errorf("message = %q, want the login message for the nonce", got.Message)
+	}
+	if svc.Recipient() != "localhost:5173" {
+		t.Errorf("recipient = %q", svc.Recipient())
 	}
 	if len(store.saved) != 1 || store.saved[0] != got || store.ttls[0] != 5*time.Minute {
 		t.Errorf("store got %+v ttl %v, want the issued nonce with 5m ttl", store.saved, store.ttls)
