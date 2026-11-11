@@ -11,7 +11,10 @@ publish.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-near-sdk.workspace = true
+hex.workspace = true
+# `unstable` exposes env::ecrecover for EIP-191 approvals.
+near-sdk = { workspace = true, features = ["unstable"] }
 
 [dev-dependencies]
-near-sdk = { workspace = true, features = ["unit-testing"] }
+near-sdk = { workspace = true, features = ["unit-testing", "unstable"] }
+wallet-fixtures = { path = "../wallet-fixtures" }

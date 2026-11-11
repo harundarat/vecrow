@@ -1,5 +1,6 @@
 //! Escrow state and the JSON views returned by `get_escrow`.
 
+use crate::signature::{Approver, ApproverKey};
 use near_sdk::json_types::U128;
 use near_sdk::{AccountId, near};
 
@@ -70,6 +71,10 @@ pub struct Escrow {
     pub fee_bps: u16,
     /// Review window locked at `create_escrow` (R-07).
     pub review_window_sec: u64,
+    /// Set once by `bind_approver` (R-04), then locked.
+    pub approver: Option<ApproverKey>,
+    /// The client's NEAR account for refunds, set with the approver.
+    pub refund_account: Option<AccountId>,
     pub status: EscrowStatus,
     pub created_at_ms: u64,
 }
@@ -92,6 +97,8 @@ pub struct EscrowView {
     pub split: Vec<SplitShare>,
     pub fee_bps: u16,
     pub review_window_sec: u64,
+    pub approver: Option<Approver>,
+    pub refund_account: Option<AccountId>,
     /// Sum of all milestone amounts.
     pub total: U128,
     pub created_at_ms: u64,
@@ -107,6 +114,8 @@ impl EscrowView {
             split: escrow.split.clone(),
             fee_bps: escrow.fee_bps,
             review_window_sec: escrow.review_window_sec,
+            approver: escrow.approver.as_ref().map(ApproverKey::to_approver),
+            refund_account: escrow.refund_account.clone(),
             total: U128(escrow.total()),
             created_at_ms: escrow.created_at_ms,
         }

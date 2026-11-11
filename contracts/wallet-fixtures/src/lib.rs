@@ -177,6 +177,20 @@ impl EvmWallet {
     }
 }
 
+/// Turns a low-s EIP-191 signature into its high-s twin (`s` → `n − s`,
+/// recovery bit flipped). Both recover the same address, but EIP-2 forbids
+/// high-s signatures and wallets never produce them.
+pub fn malleate_evm_signature(signature: &str) -> String {
+    let bytes = hex::decode(signature.trim_start_matches("0x")).expect("hex signature");
+    let sig = k256::ecdsa::Signature::from_slice(&bytes[..64]).expect("r and s");
+    let (r, s) = sig.split_scalars();
+    let high = k256::ecdsa::Signature::from_scalars(r.to_bytes(), (-*s).to_bytes())
+        .expect("valid scalars");
+    let mut out = high.to_bytes().to_vec();
+    out.push(if bytes[64] == 27 { 28 } else { 27 });
+    format!("0x{}", hex::encode(out))
+}
+
 /// A Solana wallet key that signs raw message bytes, as Phantom's
 /// `signMessage` does.
 pub struct SolanaWallet {

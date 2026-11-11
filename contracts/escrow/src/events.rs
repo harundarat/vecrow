@@ -3,6 +3,7 @@
 //! The backend can index these logs for the dashboard and the CSV export; the
 //! contract state stays the source of truth.
 
+use crate::signature::Approver;
 use near_sdk::json_types::U128;
 use near_sdk::{AccountId, near};
 
@@ -16,4 +17,10 @@ pub enum VecrowEvent {
     },
     #[event_version("1.0.0")]
     EscrowCancelled { escrow_id: String },
+    #[event_version("1.0.0")]
+    ApproverBound {
+        escrow_id: String,
+        approver: Approver,
+        refund_account: AccountId,
+    },
 }

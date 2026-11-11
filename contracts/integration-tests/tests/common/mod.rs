@@ -230,3 +230,112 @@ pub fn assert_failure(result: ExecutionFinalResult, expected: &str) {
         }
     }
 }
+
+/// A client wallet of one of the three supported schemes.
+pub enum Wallet {
+    Near(wallet_fixtures::NearWallet),
+    Evm(wallet_fixtures::EvmWallet),
+    Solana(wallet_fixtures::SolanaWallet),
+}
+
+impl Wallet {
+    pub fn near(account_id: &AccountId) -> Self {
+        Self::Near(wallet_fixtures::NearWallet::new(account_id.as_str(), 11))
+    }
+
+    pub fn evm() -> Self {
+        Self::Evm(wallet_fixtures::EvmWallet::new(12))
+    }
+
+    pub fn solana() -> Self {
+        Self::Solana(wallet_fixtures::SolanaWallet::new(13))
+    }
+
+    /// The `approver` argument of `bind_approver`.
+    pub fn approver(&self) -> Value {
+        match self {
+            Self::Near(w) => json!({
+                "scheme": "nep413",
+                "account_id": w.account_id(),
+                "public_key": w.public_key(),
+            }),
+            Self::Evm(w) => json!({ "scheme": "eip191", "address": w.address() }),
+            Self::Solana(w) => json!({ "scheme": "ed25519", "address": w.address() }),
+        }
+    }
+
+    pub fn label(&self) -> String {
+        match self {
+            Self::Near(w) => w.approver_label(),
+            Self::Evm(w) => w.approver_label(),
+            Self::Solana(w) => w.approver_label(),
+        }
+    }
+
+    /// Signs like the wallet; NEP-413 uses `recipient` (the escrow contract).
+    pub fn sign(&self, message: &str, nonce: &[u8; 32], recipient: &AccountId) -> String {
+        match self {
+            Self::Near(w) => w.sign_message(message, nonce, recipient.as_str()),
+            Self::Evm(w) => w.personal_sign(message),
+            Self::Solana(w) => w.sign_message(message),
+        }
+    }
+}
+
+impl Env {
+    /// Current block time in milliseconds.
+    pub async fn now_ms(&self) -> Result<u64> {
+        Ok(self.worker.view_block().await?.timestamp() / 1_000_000)
+    }
+
+    /// A deadline one hour after the current block time.
+    pub async fn deadline_ms(&self) -> Result<u64> {
+        Ok(self.now_ms().await? + 3_600_000)
+    }
+
+    /// `bind_approver` arguments signed by `wallet`.
+    pub fn bind_args(
+        &self,
+        escrow_id: &str,
+        wallet: &Wallet,
+        refund_account: &AccountId,
+        nonce: u8,
+        deadline_ms: u64,
+    ) -> Value {
+        let nonce = wallet_fixtures::nonce(nonce);
+        let message = wallet_fixtures::bind_message(
+            self.escrow.id().as_str(),
+            escrow_id,
+            &wallet.label(),
+            refund_account.as_str(),
+            &nonce,
+            deadline_ms,
+        );
+        json!({
+            "escrow_id": escrow_id,
+            "approver": wallet.approver(),
+            "refund_account": refund_account,
+            "nonce": wallet_fixtures::nonce_hex(&nonce),
+            "deadline_ms": deadline_ms,
+            "signature": wallet.sign(&message, &nonce, self.escrow.id()),
+        })
+    }
+
+    /// The relayer forwards a bind signed by `wallet`, with the client's
+    /// account as the refund account.
+    pub async fn bind(
+        &self,
+        escrow_id: &str,
+        wallet: &Wallet,
+        nonce: u8,
+    ) -> Result<ExecutionFinalResult> {
+        let args = self.bind_args(
+            escrow_id,
+            wallet,
+            self.client.id(),
+            nonce,
+            self.deadline_ms().await?,
+        );
+        self.call(&self.relayer, "bind_approver", args).await
+    }
+}

@@ -44,6 +44,8 @@ impl VecrowEscrow {
             split,
             fee_bps: self.config.fee_bps,
             review_window_sec: self.config.review_window_sec,
+            approver: None,
+            refund_account: None,
             status: EscrowStatus::Created,
             created_at_ms: env::block_timestamp_ms(),
         };
