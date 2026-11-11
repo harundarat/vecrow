@@ -294,3 +294,89 @@ fn nonces_must_be_64_lowercase_hex() {
         assert!(parse_nonce(&bad).is_err(), "{bad}");
     }
 }
+
+/// Signatures made by independent JavaScript implementations: ethers v6
+/// `signMessage` (EIP-191, as dApps use with MetaMask), node:crypto ed25519 +
+/// bs58 (Solana `signMessage`), and the borsh JS package with the NEP-413
+/// schema (NEAR `signMessage`). Copied from the backend's wallet-login tests
+/// (`backend/internal/walletsig/testdata/vectors.json`); none of it is
+/// produced by Rust code in this repository.
+#[test]
+fn signatures_from_independent_js_implementations_verify() {
+    use near_sdk::serde_json::Value;
+    set_context(RELAYER, T0_MS);
+    let v: Value =
+        near_sdk::serde_json::from_str(include_str!("testdata/walletsig_vectors.json")).unwrap();
+    let s = |path: &[&str]| -> String {
+        path.iter()
+            .fold(&v, |value, key| &value[*key])
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let no_nonce = [0u8; 32];
+
+    let evm = ApproverKey::parse(&Approver::Eip191 {
+        address: s(&["evm", "address"]),
+    })
+    .unwrap();
+    let message = s(&["evm", "message"]);
+    let signature = s(&["evm", "signature"]);
+    assert_eq!(
+        evm.verify(&message, &no_nonce, CONTRACT, &signature),
+        Ok(true)
+    );
+    assert_eq!(
+        evm.verify(
+            &message.replacen('N', "n", 1),
+            &no_nonce,
+            CONTRACT,
+            &signature
+        ),
+        Ok(false)
+    );
+
+    let solana = ApproverKey::parse(&Approver::Ed25519 {
+        address: s(&["solana", "address"]),
+    })
+    .unwrap();
+    let message = s(&["solana", "message"]);
+    let signature = s(&["solana", "signature"]);
+    assert_eq!(
+        solana.verify(&message, &no_nonce, CONTRACT, &signature),
+        Ok(true)
+    );
+    assert_eq!(
+        solana.verify(
+            &message.replacen('N', "n", 1),
+            &no_nonce,
+            CONTRACT,
+            &signature
+        ),
+        Ok(false)
+    );
+
+    let near = ApproverKey::parse(&Approver::Nep413 {
+        account_id: account(&s(&["nep413", "account_id"])),
+        public_key: s(&["nep413", "public_key"]),
+    })
+    .unwrap();
+    let message = s(&["nep413", "message"]);
+    let mut nonce = [0u8; 32];
+    hex::decode_to_slice(s(&["nep413", "nonce"]), &mut nonce).unwrap();
+    let recipient = s(&["nep413", "recipient"]);
+    let signature = s(&["nep413", "signature"]);
+    assert_eq!(
+        near.verify(&message, &nonce, &recipient, &signature),
+        Ok(true)
+    );
+    assert_eq!(
+        near.verify(&message, &nonce, "other.recipient", &signature),
+        Ok(false)
+    );
+    nonce[0] ^= 1;
+    assert_eq!(
+        near.verify(&message, &nonce, &recipient, &signature),
+        Ok(false)
+    );
+}

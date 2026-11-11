@@ -1,0 +1,20 @@
+{
+  "evm": {
+    "address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "message": "localhost:5173 wants you to sign in with your wallet.\n\nWallet: 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266\nNonce: abababababababababababababababababababababababababababababababab\nExpires: 2026-11-08T12:05:00Z\n\nSigning is free and does not send a transaction.",
+    "signature": "0x9bb78564fcf5aff6a4e445ec6190d1173b4e44f8d3b6f071b8088a11fc882875288e5312942368184e14a3987928d625da52a314a780279c487df954fbfe996b1b"
+  },
+  "solana": {
+    "address": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "message": "localhost:5173 wants you to sign in with your wallet.\n\nWallet: AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9\nNonce: abababababababababababababababababababababababababababababababab\nExpires: 2026-11-08T12:05:00Z\n\nSigning is free and does not send a transaction.",
+    "signature": "36tH3p79Me1C2MiN9P48B48oxcFcNJpPXsVhz2SF4MCEh9i6dva2TUMJxhtHDpPs994N4dPvKJFQEbEXLuEzpBKB"
+  },
+  "nep413": {
+    "account_id": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+    "public_key": "ed25519:9hSR6S7WPtxmTojgo6GG3k4yDPecgJY292j7xrsUGWBu",
+    "message": "localhost:5173 wants you to sign in with your wallet.\n\nWallet: 8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394\nNonce: abababababababababababababababababababababababababababababababab\nExpires: 2026-11-08T12:05:00Z\n\nSigning is free and does not send a transaction.",
+    "nonce": "abababababababababababababababababababababababababababababababab",
+    "recipient": "localhost:5173",
+    "signature": "kIkNB8oCO0Zl7rpzPWJb8xq0H/mmL/n9/XmAySNuNfp57iiLPhuuiqeyutsGsqq2soj6Es47gVvQoOfLSdkGAw=="
+  }
+}
