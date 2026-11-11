@@ -36,6 +36,12 @@ pub enum VecrowEvent {
         submitted_at_ms: u64,
     },
     #[event_version("1.0.0")]
+    RevisionRequested {
+        escrow_id: String,
+        milestone: u32,
+        revision_count: u8,
+    },
+    #[event_version("1.0.0")]
     MilestoneReleased {
         escrow_id: String,
         milestone: u32,

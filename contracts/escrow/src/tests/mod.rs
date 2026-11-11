@@ -7,6 +7,7 @@ mod bind;
 mod create;
 mod funding;
 mod payout;
+mod revision;
 mod signature;
 mod split;
 mod submit;
@@ -379,4 +380,32 @@ pub fn payout_callback(
         vec![result],
     );
     contract.on_payout(escrow_id.to_string(), account(account_id), U128(amount))
+}
+
+/// The relayer forwards a revision request for `milestone` signed by
+/// `wallet`.
+pub fn request_revision(
+    contract: &mut VecrowEscrow,
+    escrow_id: &str,
+    milestone: u32,
+    wallet: &Wallet,
+    nonce: u8,
+    now_ms: u64,
+) {
+    let (nonce, signature) = sign_milestone(
+        wallet,
+        "request_revision",
+        escrow_id,
+        milestone,
+        nonce,
+        DEADLINE_MS,
+    );
+    set_context(RELAYER, now_ms);
+    contract.request_revision(
+        escrow_id.to_string(),
+        milestone,
+        nonce,
+        DEADLINE_MS,
+        signature,
+    );
 }

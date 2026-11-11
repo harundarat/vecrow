@@ -33,6 +33,8 @@ use signature::ApproverKey;
 pub const BPS_DENOMINATOR: u16 = 10_000;
 /// Upper bound on milestones per escrow, to bound storage and gas.
 pub const MAX_MILESTONES: usize = 20;
+/// Revision requests allowed per milestone (R-17, D-03).
+pub const MAX_REVISIONS: u8 = 2;
 
 /// Deploy-time configuration (architecture §5.2). There is no setter: the
 /// values change only by redeploying the contract, and `fee_bps` and

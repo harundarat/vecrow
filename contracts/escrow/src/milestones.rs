@@ -1,4 +1,5 @@
-//! Milestone lifecycle: submit (R-05) and signed approval (R-06).
+//! Milestone lifecycle: submit (R-05), signed approval (R-06) and revision
+//! requests (R-17).
 
 use crate::events::VecrowEvent;
 use crate::payout::ReleaseTrigger;
@@ -62,6 +63,52 @@ impl VecrowEscrow {
         );
         self.release_milestone(id, &mut escrow, milestone, ReleaseTrigger::Approval);
         self.save_escrow(id, escrow);
+    }
+
+    /// Sends a `Submitted` milestone back for revision with a payload signed
+    /// by the approver (R-17), at most `MAX_REVISIONS` (2) times per
+    /// milestone. The milestone becomes `RevisionRequested` and the
+    /// auto-release timer stops until the freelancer submits again. The
+    /// reason is stored by the backend, not on chain.
+    pub fn request_revision(
+        &mut self,
+        escrow_id: String,
+        milestone: u32,
+        nonce: String,
+        deadline_ms: u64,
+        signature: String,
+    ) {
+        let (id, mut escrow) = self.load_escrow(&escrow_id);
+        let revisions = escrow
+            .milestones
+            .get(milestone as usize)
+            .filter(|m| m.status == MilestoneStatus::Submitted)
+            .map(|m| m.revision_count);
+        require!(
+            revisions.is_none_or(|count| count < MAX_REVISIONS),
+            "revision limit reached: a milestone can be sent back at most 2 times"
+        );
+        self.accept_milestone_action(
+            id,
+            &escrow,
+            MilestoneAction::RequestRevision,
+            milestone,
+            &nonce,
+            deadline_ms,
+            &signature,
+        );
+        let m = milestone_mut(&mut escrow, milestone);
+        m.status = MilestoneStatus::RevisionRequested;
+        m.revision_count += 1;
+        m.submitted_at_ms = None;
+        let revision_count = m.revision_count;
+        self.save_escrow(id, escrow);
+        VecrowEvent::RevisionRequested {
+            escrow_id,
+            milestone,
+            revision_count,
+        }
+        .emit();
     }
 }
 
