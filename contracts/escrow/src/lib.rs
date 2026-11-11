@@ -10,7 +10,7 @@
 
 mod create;
 mod events;
-mod split;
+pub mod split;
 mod types;
 
 #[cfg(test)]

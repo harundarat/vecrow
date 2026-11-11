@@ -3,6 +3,7 @@
 //! covered by the sandbox tests in `integration-tests/`.
 
 mod create;
+mod split;
 
 use crate::*;
 use near_sdk::json_types::U128;
@@ -14,6 +15,7 @@ pub const USDC: &str = "usdc.test.near";
 pub const TREASURY: &str = "treasury.test.near";
 pub const FREELANCER: &str = "freelancer.test.near";
 pub const MEMBER: &str = "member.test.near";
+pub const MEMBER2: &str = "member2.test.near";
 pub const STRANGER: &str = "stranger.test.near";
 
 /// 2023-11-14T22:13:20Z: a realistic block time for the tests.
