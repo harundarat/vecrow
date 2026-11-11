@@ -89,6 +89,17 @@ the `on_payout` callback (section 6.4).
 
 ## 5. Escrow contract
 
+The contract lives in [`contracts/`](../contracts/), a Cargo workspace with Rust 1.97.0
+pinned in `rust-toolchain.toml`. It uses near-sdk 5.30 and is built to wasm with
+cargo-near 0.23 (commands in the [README](../README.md#contract-1)).
+
+| Crate | Contents |
+| --- | --- |
+| [`escrow`](../contracts/escrow/) (`vecrow-escrow`) | The contract, one module per flow, and its unit tests on near-sdk's mocked blockchain (`src/tests/`) |
+| [`mock-ft`](../contracts/mock-ft/) | Mock NEP-141 token standing in for USDC: the standard token plus an open `mint`; accounts must be registered with `storage_deposit` |
+| [`wallet-fixtures`](../contracts/wallet-fixtures/) | Test-only signers that reproduce the bytes NEAR (NEP-413), EVM (`personal_sign`) and Solana (`signMessage`) wallets sign, built with ed25519-dalek, k256 and borsh |
+| [`integration-tests`](../contracts/integration-tests/) | near-workspaces tests that deploy the cargo-near wasm files to a local sandbox node |
+
 ### 5.1 Methods
 
 | Method | Caller | Effect | Requirements |
@@ -107,16 +118,126 @@ the `on_payout` callback (section 6.4).
 
 The escrow becomes `Completed` when every milestone is `Released` or `Refunded`.
 Escrows that are not on-chain yet (`Open`, `PendingApproval`, `Approved`) exist only in
-the backend (section 6.1); the contract never sees them.
+the backend (section 6.1); the contract never sees them. Besides these methods, the
+contract has the `new` initializer, called once at deploy, and the NEP-330 view
+`contract_source_metadata` that near-sdk adds to every contract.
+
+Arguments and results, in JSON:
+
+```text
+new(usdc_contract_id: AccountId, treasury_account: AccountId, fee_bps: u16, review_window_sec: u64)
+create_escrow(terms: EscrowTerms, freelancer_signature: {public_key: String, signature: String},
+              client_signature: String)
+cancel(escrow_id: String, nonce: String?, deadline_ms: u64?, signature: String?)   // signed fields: approver only
+ft_on_transfer(sender_id: AccountId, amount: U128, msg: String) -> U128            // amount to give back
+submit_milestone(escrow_id: String, milestone: u32)
+approve_milestone(escrow_id: String, milestone: u32, nonce: String, deadline_ms: u64, signature: String)
+request_revision(escrow_id: String, milestone: u32, nonce: String, deadline_ms: u64, signature: String)
+auto_release(escrow_id: String, milestone: u32)
+refund_unsubmitted(escrow_id: String, milestone: u32?)                             // omitted: every Pending milestone
+on_payout(escrow_id: String, account_id: AccountId, amount: U128) -> bool          // #[private]
+retry_payout(escrow_id: String, account_id: AccountId) -> bool                     // true if the transfer succeeded
+get_escrow(escrow_id: String) -> EscrowView | null
+
+EscrowTerms {
+  escrow_id: String, freelancer: AccountId, milestones: [U128],
+  split: [{account_id: AccountId, bps: u16}], approver: Approver,
+  refund_account: AccountId, fee_bps: u16, deadline_ms: u64
+}
+```
+
+- **No attached deposit.** No method is payable. Storage and the 1 yoctoNEAR that each
+  `ft_transfer` requires are paid from the contract's own NEAR balance (D-19).
+- **Who may call.** Freelancer methods (`submit_milestone`, `refund_unsubmitted`, and
+  `cancel` without a signature) check `predecessor_account_id`, which a NEP-366 meta
+  transaction keeps as the freelancer, so the relayer cannot act on its own. Signed
+  methods (`create_escrow`, `approve_milestone`, `request_revision`, and `cancel` with a
+  signature) check only the signatures; the caller gains no rights (D-02).
+- **JSON conventions.** Amounts are USDC base units as `U128` strings. `milestone` is a
+  0-based index. Times are milliseconds since the Unix epoch (`*_ms`), except
+  `review_window_sec`. `Approver` is tagged by `scheme`, with the same scheme names as
+  wallet login (§7.5):
+  `{"scheme": "nep413", "account_id": "client.near", "public_key": "ed25519:<base58>"}`,
+  `{"scheme": "eip191", "address": "0x<40 hex>"}`, or
+  `{"scheme": "ed25519", "address": "<base58 public key>"}`. The freelancer's
+  `public_key` is `ed25519:<base58>`, like a NEAR wallet returns it.
+- **Gas.** A release (`approve_milestone`, `auto_release`) makes up to 11 payouts (the
+  fee and 10 split recipients); each reserves 10 TGas for `ft_transfer` and 10 TGas for
+  `on_payout`. Attach 300 TGas. The largest release burns about 48 TGas in the sandbox
+  tests.
+
+**Escrow ID.** The backend chooses the escrow ID when the escrow is proposed (`Open`),
+for example a lowercase UUID, and `create_escrow` stores the escrow under it. It is 1 to
+64 characters from `a-z`, `0-9`, `-` and `_`, so it has one spelling in the signed
+messages and in the funding `msg` of `ft_transfer_call`. `create_escrow` rejects an ID
+that is malformed or already used, including by a cancelled escrow. An escrow is
+identified globally by the pair (contract account, escrow ID).
+
+`get_escrow` returns the signed terms with the current state:
+
+```json
+{
+  "escrow_id": "6f1c2a5e-8d3b-4c1e-9f00-1234567890ab",
+  "freelancer": "alice.near",
+  "status": "Funded",
+  "milestones": [
+    { "amount": "1000000000", "status": "Submitted", "submitted_at_ms": 1767225600000, "revision_count": 0 },
+    { "amount": "500000000", "status": "Pending", "submitted_at_ms": null, "revision_count": 0 }
+  ],
+  "split": [{ "account_id": "alice.near", "bps": 7000 }, { "account_id": "bob.near", "bps": 3000 }],
+  "fee_bps": 50,
+  "review_window_sec": 1209600,
+  "approver": { "scheme": "eip191", "address": "0x7e5f4552091a69125d5dfcb7b8c2659029395bdf" },
+  "refund_account": "client.near",
+  "total": "1500000000",
+  "balance": "1500000000",
+  "pending_payouts": [],
+  "created_at_ms": 1767139200000,
+  "funded_at_ms": 1767142800000
+}
+```
+
+`balance` is the USDC still held for milestones that are neither released nor refunded.
+`pending_payouts` lists released or refunded USDC whose transfer failed, per account.
+A milestone can be auto-released from `submitted_at_ms + review_window_sec × 1000`.
 
 ### 5.2 State
 
 | Item | Contents |
 | --- | --- |
-| Configuration | USDC contract ID, `treasury_account`, default `fee_bps`, review window (set at deploy) |
+| Configuration | USDC contract ID, `treasury_account`, default `fee_bps`, review window (set at deploy, no setter; D-15) |
 | Escrows | Freelancer, split, approver, `refund_account`, and locked `fee_bps` (all fixed by `create_escrow`); milestones (amount, status, last submit time, `revision_count`); status |
 | Used nonces | Per approver, to reject replayed signatures |
-| `pending_payout` | `escrow_id → account → amount` for transfers that failed |
+| `pending_payout` | `escrow_id → account → amount` for transfers that failed, kept in each escrow record |
+
+Storage layout (all values Borsh-serialized):
+
+| Key | Value |
+| --- | --- |
+| `STATE` | `{ config: Config, escrows: prefix 0x00, used_nonces: prefix 0x01 }` |
+| `0x00 ‖ borsh(escrow ID: String)` | `Escrow` |
+| `0x01 ‖ sha256(borsh(ApproverKey) ‖ nonce)` | empty (set membership) |
+
+```text
+Config        { usdc_contract_id: String, treasury_account: String, fee_bps: u16, review_window_sec: u64 }
+Escrow        { freelancer: String, milestones: Vec<Milestone>, split: Vec<SplitShare>, fee_bps: u16,
+                review_window_sec: u64, approver: ApproverKey, refund_account: String,
+                status: EscrowStatus, balance: u128, pending_payouts: Vec<PendingPayout>,
+                created_at_ms: u64, funded_at_ms: Option<u64> }
+Milestone     { amount: u128, status: MilestoneStatus, submitted_at_ms: Option<u64>, revision_count: u8 }
+SplitShare    { account_id: String, bps: u16 }
+PendingPayout { account_id: String, amount: u128 }
+ApproverKey   0: Nep413 { account_id: String, public_key: [u8; 32] }
+              1: Eip191 { address: [u8; 20] }
+              2: Ed25519 { public_key: [u8; 32] }
+EscrowStatus    0 Created, 1 Funded, 2 Completed, 3 Cancelled
+MilestoneStatus 0 Pending, 1 Submitted, 2 RevisionRequested, 3 Released, 4 Refunded
+```
+
+An escrow with 2 milestones, 2 recipients, a NEP-413 approver and a UUID as ID takes
+about 300 bytes of storage (0.003 NEAR); each used nonce takes 73 bytes. Limits of
+20 milestones and 10 split recipients per escrow bound both storage and the gas of a
+release.
 
 ### 5.3 Signature verification
 
@@ -136,9 +257,124 @@ Each signature is checked for its scheme:
 
 | Scheme | Wallets | Verification |
 | --- | --- | --- |
-| NEP-413 | NEAR wallets | ed25519 over the NEP-413 message format |
-| EIP-191 | MetaMask and other EVM wallets | keccak256 of the prefixed message, `ecrecover`, compare with the approver address |
+| NEP-413 | NEAR wallets | ed25519 over the NEP-413 message format, against the public key given with the signature (D-16) |
+| EIP-191 | MetaMask and other EVM wallets | keccak256 of the prefixed message, `ecrecover` (high-s rejected), compare with the approver address |
 | ed25519 | Phantom and other Solana wallets | ed25519 over the raw message bytes |
+
+**Messages.** Every payload is UTF-8 text built from the call arguments. Lines are
+separated by `\n` (0x0A); there is no trailing newline and no other whitespace. The
+contract rebuilds the text and verifies the signatures over it, so the backend and the
+frontend must produce it byte for byte (D-17). `wallet-fixtures` reproduces these bytes
+for the tests.
+
+Escrow terms, signed by both parties for `create_escrow`:
+
+```text
+Vecrow create_escrow
+Contract: {contract account ID}
+Escrow: {escrow ID}
+Freelancer: {freelancer}
+Milestones: {amount},{amount},…
+Split: {account}:{bps},{account}:{bps},…
+Approver: {scheme}:{address}
+Refund account: {refund_account}
+Fee: {fee_bps} bps
+Deadline: {deadline_ms}
+```
+
+Approver actions:
+
+```text
+Vecrow {approve_milestone | request_revision}
+Contract: {contract account ID}
+Escrow: {escrow ID}
+Milestone: {milestone}
+Nonce: {nonce}
+Deadline: {deadline_ms}
+```
+
+```text
+Vecrow cancel
+Contract: {contract account ID}
+Escrow: {escrow ID}
+Nonce: {nonce}
+Deadline: {deadline_ms}
+```
+
+| Field | Format |
+| --- | --- |
+| Contract account ID | The escrow contract, e.g. `escrow.vecrow.testnet` |
+| Escrow ID | As in §5.1 |
+| Milestones | Amounts in USDC base units, decimal, in milestone order, separated by `,` |
+| Split | `{account}:{bps}` in split order (the first recipient gets the rounding remainder), separated by `,` |
+| `{scheme}:{address}` | `nep413:{account_id}`, `eip191:0x{40 lowercase hex}`, or `ed25519:{base58 public key}` |
+| `fee_bps` | Decimal; must equal the configuration (R-19) |
+| `milestone` | 0-based index, decimal |
+| `nonce` | 32 random bytes as 64 lowercase hex characters; uppercase is rejected. The same string is the `nonce` argument |
+| `deadline_ms` | Milliseconds since the Unix epoch, decimal. Valid while the block time is at most the deadline |
+
+What each wallet signs over that `message`:
+
+| Scheme | Wallet call | Signed bytes | Signature argument |
+| --- | --- | --- | --- |
+| `nep413` | `signMessage({message, nonce, recipient})` with `recipient` = the contract account ID, no `callbackUrl`, and `nonce` = the 32 action nonce bytes, or `sha256(message)` for terms | `sha256(9d 01 00 80 ‖ u32_le(len(message)) ‖ message ‖ nonce[32] ‖ u32_le(len(recipient)) ‖ recipient ‖ 00)`: the Borsh tag 2^31 + 413, then the Borsh payload with `callbackUrl = None` | base64, 64 bytes |
+| `eip191` | `personal_sign(message)` | `keccak256("\x19Ethereum Signed Message:\n" ‖ decimal byte length of message ‖ message)` | hex of `r ‖ s ‖ v` (65 bytes, `0x` optional), `v` = 27/28 or 0/1 |
+| `ed25519` | `signMessage(utf8 bytes of message)` | `message` | base58, 64 bytes |
+
+The freelancer always signs the terms with NEP-413, passing the `public_key` the wallet
+returns. The client signs them with the approver wallet named in the terms, which also
+proves that they control it (R-04). For EIP-191, the address recovered with `ecrecover`
+(last 20 bytes of the keccak256 of the 64-byte public key) must equal the approver
+address. For example, approving milestone 3 of escrow `e12` on `escrow.test.near` with
+nonce `ff…ff` and deadline 42 means signing:
+
+```text
+Vecrow approve_milestone
+Contract: escrow.test.near
+Escrow: e12
+Milestone: 3
+Nonce: ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+Deadline: 42
+```
+
+`create_escrow` checks the escrow ID, the deadline, the fee, the milestone and split
+rules, the approver and refund-account rules (D-18), then both signatures. Actions check
+the escrow and milestone status, the deadline, the approver's signature, and that this
+approver has not used the nonce before (for any escrow or action); then the nonce is
+recorded. A rejected call is reverted, so it uses up nothing. The contract ID (also the
+NEP-413 recipient) prevents replay on another deployment, the escrow ID and milestone
+pin the target, and the first line keeps terms, approvals, revisions and cancellations
+apart.
+
+### 5.4 Payouts
+
+Every transfer out of the contract is an `ft_transfer(receiver_id, amount, memo:
+"vecrow escrow {escrow ID}")` on the USDC contract with 1 yoctoNEAR attached, followed by
+`on_payout(escrow_id, account_id, amount)` (section 6.4). A release pays
+`fee = floor(amount × fee_bps / 10,000)` to `treasury_account` and splits the rest by
+bps, with the rounding remainder to the first recipient; the contract asserts that the
+fee and the shares add up to the milestone amount. Each recipient gets its own transfer,
+zero amounts are skipped (NEP-141 rejects them), and a refund is one transfer of the sum
+of the refunded milestones, without a fee (D-19).
+
+### 5.5 Events
+
+The contract logs NEP-297 events, `EVENT_JSON:{"standard":"vecrow","version":"1.0.0","event":…,"data":{…}}`,
+that the backend can index for the dashboard and the CSV export:
+
+| Event | Data |
+| --- | --- |
+| `escrow_created` | `escrow_id`, `freelancer`, `approver`, `refund_account`, `total` |
+| `escrow_cancelled` | `escrow_id`, `by` (`freelancer` or `approver`) |
+| `escrow_funded` | `escrow_id`, `sender_id`, `amount` |
+| `milestone_submitted` | `escrow_id`, `milestone`, `submitted_at_ms` |
+| `revision_requested` | `escrow_id`, `milestone`, `revision_count` |
+| `milestone_released` | `escrow_id`, `milestone`, `amount`, `fee`, `by` (`approve_milestone` or `auto_release`) |
+| `milestones_refunded` | `escrow_id`, `milestones`, `amount`, `refund_account` |
+| `payout` | `escrow_id`, `account_id`, `amount`, `paid` (false: now pending) |
+| `escrow_completed` | `escrow_id` |
+
+A returned deposit is logged as text: `returning {amount} to {sender_id}: {reason}`.
 
 ## 6. Key flows
 
@@ -252,7 +488,8 @@ sequenceDiagram
 ```
 
 Zeroing the pending amount before sending, and restoring it only on failure, means
-two retries in a row cannot pay twice.
+two retries in a row cannot pay twice. `retry_payout` returns whether the transfer
+succeeded, so the job can tell whether the account is registered yet.
 
 ## 7. Backend
 
