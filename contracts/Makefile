@@ -2,7 +2,7 @@
 
 CARGO ?= cargo
 WASM_DIR := target/near
-CONTRACTS := mock-ft
+CONTRACTS := vecrow-escrow mock-ft
 
 .DEFAULT_GOAL := help
 
@@ -25,6 +25,7 @@ lint: ## Clippy with warnings as errors, for the host and the wasm target
 
 .PHONY: build
 build: ## Build the contract wasm files into target/near/ with cargo-near
+	$(CARGO) near build non-reproducible-wasm --locked --manifest-path escrow/Cargo.toml --out-dir $(WASM_DIR)/escrow
 	$(CARGO) near build non-reproducible-wasm --locked --manifest-path mock-ft/Cargo.toml --out-dir $(WASM_DIR)/mock-ft
 
 .PHONY: test-unit

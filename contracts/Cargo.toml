@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["mock-ft", "wallet-fixtures", "integration-tests"]
+members = ["escrow", "mock-ft", "wallet-fixtures", "integration-tests"]
 
 [workspace.package]
 version = "0.1.0"
