@@ -137,10 +137,12 @@ run downloads the nearcore sandbox binary (about 95 MB unpacked, from
 | `wallet-fixtures` | Test signers reproducing NEP-413, EIP-191 and Solana `signMessage` bytes |
 | `integration-tests` | Sandbox tests: signed terms, funding, payouts, retries, unregistered accounts, meta transactions |
 
-If the sandbox fails with `couldn't set the file descriptor limit to (65535, 65535)`, the
-environment's hard open-files limit (`ulimit -Hn`) is below what nearcore requires; raise
-it to at least 65535, or point `NEAR_SANDBOX_BIN_PATH` at a sandbox binary wrapper that
-works within the limit.
+nearcore raises its open-file limit to 65,535 at startup. On Linux, when the hard limit
+(`ulimit -H -n`) is lower and cannot be raised, as in some containers, `make test-sandbox`
+downloads the sandbox binary into `target/sandbox-shim/` and runs it with
+[`scripts/fd-limit-shim.c`](./contracts/scripts/fd-limit-shim.c) preloaded, which clamps
+that request to the hard limit (this needs a C compiler). Set `NEAR_SANDBOX_BIN_PATH` to
+use another sandbox binary instead.
 
 Deploying (testnet first, D-11) takes three steps:
 

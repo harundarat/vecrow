@@ -526,5 +526,6 @@ can only be captured by hand from the browser extensions.
 - R-06 stays Partial until signatures captured from a NEAR wallet, MetaMask and Phantom are
   added as fixtures.
 - The sandbox binary is downloaded on the first test run. nearcore raises its open-file
-  limit to 65,535 at startup, so the environment's hard limit must allow it (README).
+  limit to 65,535 at startup; where the hard limit is lower and cannot be raised,
+  `make test-sandbox` preloads a small shim that clamps the request (README).
 

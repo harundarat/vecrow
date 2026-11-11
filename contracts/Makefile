@@ -32,8 +32,22 @@ build: ## Build the contract wasm files into target/near/ with cargo-near
 test-unit: ## Unit tests (no sandbox)
 	$(CARGO) test --workspace --exclude vecrow-integration-tests
 
+# nearcore sandbox run by near-workspaces 0.24 (near-sandbox 0.4).
+SANDBOX_VERSION := 2.14.0
+SANDBOX_SHIM_DIR := $(CURDIR)/target/sandbox-shim
+
+# nearcore raises its open-file limit to 65,535 at startup. Where the hard
+# limit is lower and cannot be raised (some containers), the sandbox runs
+# through scripts/sandbox-fd-shim.sh, unless NEAR_SANDBOX_BIN_PATH is set.
 .PHONY: test-sandbox
 test-sandbox: build ## near-workspaces sandbox tests (downloads the sandbox binary on first run)
+	@hard=$$(ulimit -H -n); \
+	if [ -z "$${NEAR_SANDBOX_BIN_PATH:-}" ] && [ "$$(uname -s)" = Linux ] \
+		&& [ "$$hard" != unlimited ] && [ "$$hard" -lt 65535 ]; then \
+		echo "open-file hard limit $$hard < 65535: running the sandbox through scripts/sandbox-fd-shim.sh"; \
+		NEAR_SANDBOX_BIN_PATH=$$(scripts/sandbox-fd-shim.sh $(SANDBOX_VERSION) $(SANDBOX_SHIM_DIR)) || exit 1; \
+		export NEAR_SANDBOX_BIN_PATH; \
+	fi; \
 	$(CARGO) test -p vecrow-integration-tests
 
 .PHONY: test
