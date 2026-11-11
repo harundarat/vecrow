@@ -139,7 +139,7 @@ impl VecrowEscrow {
 
 /// Fails early, with a clear message, when the attached gas cannot cover
 /// `count` payouts and their callbacks.
-fn require_payout_gas(count: usize) {
+pub(crate) fn require_payout_gas(count: usize) {
     let per_payout = GAS_FT_TRANSFER.saturating_add(GAS_ON_PAYOUT);
     let needed = Gas::from_gas(per_payout.as_gas() * count as u64).saturating_add(GAS_RESERVE);
     let available = env::prepaid_gas().saturating_sub(env::used_gas());

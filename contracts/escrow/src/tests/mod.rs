@@ -8,6 +8,7 @@ mod bind;
 mod create;
 mod funding;
 mod payout;
+mod refund;
 mod revision;
 mod signature;
 mod split;
@@ -415,4 +416,10 @@ pub fn request_revision(
 pub fn auto_release(contract: &mut VecrowEscrow, escrow_id: &str, milestone: u32, now_ms: u64) {
     set_context(STRANGER, now_ms);
     contract.auto_release(escrow_id.to_string(), milestone);
+}
+
+/// `caller` calls `refund_unsubmitted`.
+pub fn refund(contract: &mut VecrowEscrow, caller: &str, escrow_id: &str, milestone: Option<u32>) {
+    set_context(caller, T0_MS);
+    contract.refund_unsubmitted(escrow_id.to_string(), milestone);
 }

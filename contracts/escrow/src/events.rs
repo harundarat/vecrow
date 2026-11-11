@@ -50,6 +50,13 @@ pub enum VecrowEvent {
         /// `approve_milestone` or `auto_release`.
         by: String,
     },
+    #[event_version("1.0.0")]
+    MilestonesRefunded {
+        escrow_id: String,
+        milestones: Vec<u32>,
+        amount: U128,
+        refund_account: AccountId,
+    },
     /// The result of one `ft_transfer`; unpaid amounts become pending.
     #[event_version("1.0.0")]
     Payout {
