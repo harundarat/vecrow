@@ -1,5 +1,5 @@
-//! Milestone lifecycle: submit (R-05), signed approval (R-06) and revision
-//! requests (R-17).
+//! Milestone lifecycle: submit (R-05), signed approval (R-06), revision
+//! requests (R-17) and auto-release (R-07).
 
 use crate::events::VecrowEvent;
 use crate::payout::ReleaseTrigger;
@@ -109,6 +109,37 @@ impl VecrowEscrow {
             revision_count,
         }
         .emit();
+    }
+
+    /// Releases a `Submitted` milestone once the escrow's review window has
+    /// passed since its latest submission (R-07, D-03). Anyone may call it;
+    /// the backend runs it as a job. Rejected while the milestone is
+    /// `RevisionRequested`, since a revision request stops the timer. Pays out
+    /// like an approval; attach 300 TGas.
+    pub fn auto_release(&mut self, escrow_id: String, milestone: u32) {
+        let (id, mut escrow) = self.load_escrow(&escrow_id);
+        require_funded(&escrow);
+        let window_ms = escrow.review_window_sec.saturating_mul(1_000);
+        let m = escrow
+            .milestones
+            .get(milestone as usize)
+            .unwrap_or_else(|| env::panic_str("unknown milestone"));
+        match m.status {
+            MilestoneStatus::Submitted => {}
+            MilestoneStatus::RevisionRequested => {
+                env::panic_str("a milestone awaiting revision cannot be auto-released")
+            }
+            _ => env::panic_str("only a Submitted milestone can be auto-released"),
+        }
+        let submitted_at_ms = m
+            .submitted_at_ms
+            .unwrap_or_else(|| env::panic_str("milestone has no submission time"));
+        require!(
+            env::block_timestamp_ms() >= submitted_at_ms.saturating_add(window_ms),
+            "review window has not ended"
+        );
+        self.release_milestone(id, &mut escrow, milestone, ReleaseTrigger::AutoRelease);
+        self.save_escrow(id, escrow);
     }
 }
 

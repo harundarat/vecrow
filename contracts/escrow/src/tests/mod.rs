@@ -3,6 +3,7 @@
 //! covered by the sandbox tests in `integration-tests/`.
 
 mod approve;
+mod auto_release;
 mod bind;
 mod create;
 mod funding;
@@ -408,4 +409,10 @@ pub fn request_revision(
         DEADLINE_MS,
         signature,
     );
+}
+
+/// Anyone (here a stranger) calls `auto_release` at `now_ms`.
+pub fn auto_release(contract: &mut VecrowEscrow, escrow_id: &str, milestone: u32, now_ms: u64) {
+    set_context(STRANGER, now_ms);
+    contract.auto_release(escrow_id.to_string(), milestone);
 }
