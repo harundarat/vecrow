@@ -136,3 +136,37 @@ async fn on_payout_is_private() -> anyhow::Result<()> {
     assert_failure(result, "Method on_payout is private");
     Ok(())
 }
+
+#[tokio::test]
+async fn largest_split_is_paid_within_the_gas_limit() -> anyhow::Result<()> {
+    // 10 recipients plus the fee is the most payouts one release can make;
+    // EIP-191 (ecrecover) is the most expensive signature to verify. Both
+    // approval and auto-release must fit in one 300 TGas call, or the
+    // milestone could never be released.
+    let env = setup().await?;
+    let mut recipients = Vec::new();
+    for i in 0..10 {
+        let account = env.new_account(&format!("m{i}"), 1).await?;
+        env.register(account.id()).await?;
+        recipients.push(account);
+    }
+    let split: Vec<_> = recipients.iter().map(|a| (a.id(), 1_000)).collect();
+    let id = env.create_escrow(&[usdc(1_000)], &split).await?;
+    let wallet = Wallet::evm();
+    env.bind_and_fund(&id, &wallet, usdc(1_000)).await?;
+    env.submit(&id, 0).await?.into_result()?;
+
+    let result = env.approve(&id, 0, &wallet, 1).await?;
+    println!("approval with 11 payouts burnt {}", result.total_gas_burnt);
+    result.into_result()?;
+
+    assert_eq!(env.balance(env.treasury.id()).await?, usdc(5));
+    for account in &recipients {
+        assert_eq!(env.balance(account.id()).await?, 99_500_000);
+    }
+    let escrow = env.get_escrow(&id).await?;
+    assert_eq!(escrow["status"], "Completed");
+    assert_eq!(escrow["pending_payouts"], json!([]));
+    assert_eq!(env.balance(env.escrow.id()).await?, 0);
+    Ok(())
+}
