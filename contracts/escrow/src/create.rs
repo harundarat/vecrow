@@ -48,6 +48,7 @@ impl VecrowEscrow {
             refund_account: None,
             status: EscrowStatus::Created,
             balance: 0,
+            pending_payouts: Vec::new(),
             created_at_ms: env::block_timestamp_ms(),
             funded_at_ms: None,
         };

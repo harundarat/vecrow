@@ -45,6 +45,15 @@ pub struct SplitShare {
     pub bps: u16,
 }
 
+/// USDC owed to an account after a failed transfer, re-sent by
+/// `retry_payout` (R-20).
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingPayout {
+    pub account_id: AccountId,
+    pub amount: U128,
+}
+
 /// A milestone as stored and as returned by `get_escrow`.
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -79,6 +88,8 @@ pub struct Escrow {
     /// USDC held for milestones that are neither released nor refunded.
     /// Equals the total once funded, and decreases with each payout.
     pub balance: u128,
+    /// Failed transfers per account, waiting for `retry_payout` (R-20).
+    pub pending_payouts: Vec<PendingPayout>,
     pub created_at_ms: u64,
     pub funded_at_ms: Option<u64>,
 }
@@ -107,6 +118,8 @@ pub struct EscrowView {
     pub total: U128,
     /// USDC still held for unreleased, unrefunded milestones.
     pub balance: U128,
+    /// Released or refunded USDC whose transfer failed, per account.
+    pub pending_payouts: Vec<PendingPayout>,
     pub created_at_ms: u64,
     pub funded_at_ms: Option<u64>,
 }
@@ -125,6 +138,7 @@ impl EscrowView {
             refund_account: escrow.refund_account.clone(),
             total: U128(escrow.total()),
             balance: U128(escrow.balance),
+            pending_payouts: escrow.pending_payouts.clone(),
             created_at_ms: escrow.created_at_ms,
             funded_at_ms: escrow.funded_at_ms,
         }

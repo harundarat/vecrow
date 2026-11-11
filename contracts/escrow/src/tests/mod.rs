@@ -2,9 +2,11 @@
 //! blockchain. Cross-contract flows (token transfers and callbacks) are
 //! covered by the sandbox tests in `integration-tests/`.
 
+mod approve;
 mod bind;
 mod create;
 mod funding;
+mod payout;
 mod signature;
 mod split;
 mod submit;
@@ -232,4 +234,149 @@ pub fn funded_escrow(contract: &mut VecrowEscrow, wallet: &Wallet) -> String {
 pub fn submit(contract: &mut VecrowEscrow, escrow_id: &str, milestone: u32, now_ms: u64) {
     set_context(FREELANCER, now_ms);
     contract.submit_milestone(escrow_id.to_string(), milestone);
+}
+
+/// A milestone action signed by `wallet`: `(nonce hex, signature)`.
+pub fn sign_milestone(
+    wallet: &Wallet,
+    action: &str,
+    escrow_id: &str,
+    milestone: u32,
+    nonce: u8,
+    deadline_ms: u64,
+) -> (String, String) {
+    let nonce = wallet_fixtures::nonce(nonce);
+    let message = wallet_fixtures::milestone_message(
+        action,
+        CONTRACT,
+        escrow_id,
+        milestone,
+        &nonce,
+        deadline_ms,
+    );
+    (
+        wallet_fixtures::nonce_hex(&nonce),
+        wallet.sign(&message, &nonce),
+    )
+}
+
+/// The relayer forwards an approval of `milestone` signed by `wallet`.
+pub fn approve(
+    contract: &mut VecrowEscrow,
+    escrow_id: &str,
+    milestone: u32,
+    wallet: &Wallet,
+    nonce: u8,
+    now_ms: u64,
+) {
+    let (nonce, signature) = sign_milestone(
+        wallet,
+        "approve_milestone",
+        escrow_id,
+        milestone,
+        nonce,
+        DEADLINE_MS,
+    );
+    set_context(RELAYER, now_ms);
+    contract.approve_milestone(
+        escrow_id.to_string(),
+        milestone,
+        nonce,
+        DEADLINE_MS,
+        signature,
+    );
+}
+
+/// A function call scheduled by the contract in the current mocked call.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Call {
+    pub receiver: String,
+    pub method: String,
+    pub args: near_sdk::serde_json::Value,
+    pub deposit: NearToken,
+}
+
+/// Function calls scheduled by the last contract call.
+pub fn scheduled_calls() -> Vec<Call> {
+    near_sdk::test_utils::get_created_receipts()
+        .into_iter()
+        .flat_map(|receipt| {
+            let receiver = receipt.receiver_id.to_string();
+            receipt
+                .actions
+                .into_iter()
+                .filter_map(move |action| match action {
+                    near_sdk::mock::MockAction::FunctionCallWeight {
+                        method_name,
+                        args,
+                        attached_deposit,
+                        ..
+                    } => Some(Call {
+                        receiver: receiver.clone(),
+                        method: String::from_utf8(method_name).unwrap(),
+                        args: near_sdk::serde_json::from_slice(&args).unwrap(),
+                        deposit: attached_deposit,
+                    }),
+                    _ => None,
+                })
+        })
+        .collect()
+}
+
+/// `(receiver, amount)` of each `ft_transfer` scheduled by the last call, in
+/// order. Asserts that each attaches exactly 1 yoctoNEAR and is followed by
+/// an `on_payout` callback for the same receiver and amount.
+pub fn ft_transfers() -> Vec<(String, u128)> {
+    let calls = scheduled_calls();
+    let transfers: Vec<_> = calls.iter().filter(|c| c.method == "ft_transfer").collect();
+    let callbacks: Vec<_> = calls.iter().filter(|c| c.method == "on_payout").collect();
+    assert_eq!(
+        transfers.len(),
+        callbacks.len(),
+        "each transfer has a callback"
+    );
+    transfers
+        .iter()
+        .zip(callbacks)
+        .map(|(t, cb)| {
+            assert_eq!(t.receiver, USDC);
+            assert_eq!(t.deposit, NearToken::from_yoctonear(1));
+            assert_eq!(cb.receiver, CONTRACT);
+            assert_eq!(cb.deposit, NearToken::from_yoctonear(0));
+            assert_eq!(cb.args["account_id"], t.args["receiver_id"]);
+            assert_eq!(cb.args["amount"], t.args["amount"]);
+            (
+                t.args["receiver_id"].as_str().unwrap().to_string(),
+                t.args["amount"].as_str().unwrap().parse().unwrap(),
+            )
+        })
+        .collect()
+}
+
+/// Runs the `on_payout` callback as the contract itself, with the given
+/// result of the `ft_transfer`.
+pub fn payout_callback(
+    contract: &mut VecrowEscrow,
+    escrow_id: &str,
+    account_id: &str,
+    amount: u128,
+    transfer_succeeded: bool,
+) -> bool {
+    let result = if transfer_succeeded {
+        near_sdk::PromiseResult::Successful(vec![])
+    } else {
+        near_sdk::PromiseResult::Failed
+    };
+    testing_env!(
+        VMContextBuilder::new()
+            .current_account_id(account(CONTRACT))
+            .predecessor_account_id(account(CONTRACT))
+            .block_timestamp(T0_MS * 1_000_000)
+            .build(),
+        near_sdk::test_vm_config(),
+        near_sdk::RuntimeFeesConfig::test(),
+        Default::default(),
+        vec![result],
+    );
+    contract.on_payout(escrow_id.to_string(), account(account_id), U128(amount))
 }

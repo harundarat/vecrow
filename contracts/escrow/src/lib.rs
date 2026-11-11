@@ -13,6 +13,7 @@ mod create;
 mod events;
 mod funding;
 mod milestones;
+pub mod payout;
 pub mod signature;
 pub mod split;
 mod types;

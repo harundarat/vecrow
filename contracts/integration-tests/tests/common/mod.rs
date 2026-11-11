@@ -396,3 +396,121 @@ impl Env {
         self.call(&self.relayer, "bind_approver", args).await
     }
 }
+
+impl Env {
+    /// Creates a sandbox account with `near` NEAR that is not registered on
+    /// the token.
+    pub async fn new_account(&self, name: &str, near: u128) -> Result<Account> {
+        subaccount(&self.worker, name, near).await
+    }
+
+    /// The freelancer creates an escrow with the given milestone amounts and
+    /// `(account, bps)` split.
+    pub async fn create_escrow(
+        &self,
+        milestones: &[u128],
+        split: &[(&AccountId, u16)],
+    ) -> Result<String> {
+        let milestones: Vec<String> = milestones.iter().map(u128::to_string).collect();
+        let split: Vec<Value> = split
+            .iter()
+            .map(|(account_id, bps)| json!({ "account_id": account_id, "bps": bps }))
+            .collect();
+        let result = self
+            .call(
+                &self.freelancer,
+                "create_escrow",
+                json!({ "milestones": milestones, "split": split }),
+            )
+            .await?
+            .into_result()?;
+        Ok(result.json()?)
+    }
+
+    /// Binds `wallet`, mints `total` to the client and funds the escrow.
+    pub async fn bind_and_fund(&self, escrow_id: &str, wallet: &Wallet, total: u128) -> Result<()> {
+        self.bind(escrow_id, wallet, 100).await?.into_result()?;
+        self.mint(self.client.id(), total).await?;
+        ensure!(self.fund(escrow_id, total).await? == total);
+        Ok(())
+    }
+
+    pub async fn submit(&self, escrow_id: &str, milestone: u32) -> Result<ExecutionFinalResult> {
+        self.call(
+            &self.freelancer,
+            "submit_milestone",
+            json!({ "escrow_id": escrow_id, "milestone": milestone }),
+        )
+        .await
+    }
+
+    /// Arguments of `approve_milestone` or `request_revision` signed by
+    /// `wallet`.
+    pub fn milestone_args(
+        &self,
+        action: &str,
+        escrow_id: &str,
+        milestone: u32,
+        wallet: &Wallet,
+        nonce: u8,
+        deadline_ms: u64,
+    ) -> Value {
+        let nonce = wallet_fixtures::nonce(nonce);
+        let message = wallet_fixtures::milestone_message(
+            action,
+            self.escrow.id().as_str(),
+            escrow_id,
+            milestone,
+            &nonce,
+            deadline_ms,
+        );
+        json!({
+            "escrow_id": escrow_id,
+            "milestone": milestone,
+            "nonce": wallet_fixtures::nonce_hex(&nonce),
+            "deadline_ms": deadline_ms,
+            "signature": wallet.sign(&message, &nonce, self.escrow.id()),
+        })
+    }
+
+    /// The relayer forwards `action` (`approve_milestone` or
+    /// `request_revision`) signed by `wallet`.
+    pub async fn signed_milestone_action(
+        &self,
+        action: &str,
+        escrow_id: &str,
+        milestone: u32,
+        wallet: &Wallet,
+        nonce: u8,
+    ) -> Result<ExecutionFinalResult> {
+        let args = self.milestone_args(
+            action,
+            escrow_id,
+            milestone,
+            wallet,
+            nonce,
+            self.deadline_ms().await?,
+        );
+        self.call(&self.relayer, action, args).await
+    }
+
+    pub async fn approve(
+        &self,
+        escrow_id: &str,
+        milestone: u32,
+        wallet: &Wallet,
+        nonce: u8,
+    ) -> Result<ExecutionFinalResult> {
+        self.signed_milestone_action("approve_milestone", escrow_id, milestone, wallet, nonce)
+            .await
+    }
+
+    /// Token balances of the given accounts.
+    pub async fn balances(&self, accounts: &[&AccountId]) -> Result<Vec<u128>> {
+        let mut balances = Vec::new();
+        for account in accounts {
+            balances.push(self.balance(account).await?);
+        }
+        Ok(balances)
+    }
+}
