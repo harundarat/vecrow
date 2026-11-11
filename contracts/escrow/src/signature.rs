@@ -23,7 +23,7 @@ use near_sdk::{AccountId, borsh, env, near};
 /// valid transaction.
 pub const NEP413_TAG: u32 = (1 << 31) + 413;
 
-/// An approver as passed to `bind_approver` and returned by `get_escrow`,
+/// An approver as given in the escrow terms and returned by `get_escrow`,
 /// tagged by `scheme`:
 ///
 /// - `{"scheme": "nep413", "account_id": "client.near", "public_key": "ed25519:<base58>"}`
