@@ -576,3 +576,32 @@ fn init_rejects_zero_review_window() {
     set_context(CONTRACT, T0_MS);
     VecrowEscrow::new(account(USDC), account(TREASURY), FEE_BPS, 0);
 }
+
+#[test]
+fn approver_and_refund_account_never_change_after_creation() {
+    // R-04: no method changes them. Run every state-changing method on an
+    // escrow and check both after each step.
+    let mut contract = new_contract();
+    let wallet = Wallet::evm();
+    let id = funded_escrow(&mut contract, &wallet);
+    let unchanged = |contract: &VecrowEscrow| {
+        let escrow = view(contract, &id);
+        assert_eq!(escrow.approver, wallet.approver());
+        assert_eq!(escrow.refund_account, account(REFUND));
+    };
+    unchanged(&contract);
+    submit(&mut contract, &id, 0, T0_MS);
+    unchanged(&contract);
+    request_revision(&mut contract, &id, 0, &wallet, 1, T0_MS);
+    unchanged(&contract);
+    submit(&mut contract, &id, 0, T0_MS);
+    approve(&mut contract, &id, 0, &wallet, 2, T0_MS);
+    unchanged(&contract);
+    assert!(!payout_callback(&mut contract, &id, MEMBER, 1, false));
+    set_context(STRANGER, T0_MS);
+    contract.retry_payout(id.clone(), account(MEMBER)).detach();
+    unchanged(&contract);
+    refund(&mut contract, FREELANCER, &id, None);
+    unchanged(&contract);
+    assert_eq!(view(&contract, &id).status, EscrowStatus::Completed);
+}
