@@ -99,7 +99,7 @@ after the link is shared (the creator cancels and creates a new escrow instead).
 | --- | --- | --- | --- | --- | --- |
 | R-01 | Create on-chain and cancel escrow | Contract | Implemented | [create.rs](../contracts/escrow/src/create.rs), [signature.rs](../contracts/escrow/src/signature.rs) | [tests/create.rs](../contracts/escrow/src/tests/create.rs), [tests/cancel.rs](../contracts/escrow/src/tests/cancel.rs), [tests/funding.rs](../contracts/escrow/src/tests/funding.rs), [sandbox/create_cancel.rs](../contracts/integration-tests/tests/create_cancel.rs), [sandbox/funding.rs](../contracts/integration-tests/tests/funding.rs) |
 | R-02 | Funding and amount rules | Contract | Implemented | [funding.rs](../contracts/escrow/src/funding.rs) | [tests/funding.rs](../contracts/escrow/src/tests/funding.rs), [sandbox/funding.rs](../contracts/integration-tests/tests/funding.rs), [sandbox/refund.rs](../contracts/integration-tests/tests/refund.rs) |
-| R-03 | Revenue split | Contract | Partial | [split.rs](../contracts/escrow/src/split.rs), [payout.rs](../contracts/escrow/src/payout.rs) | [tests/split.rs](../contracts/escrow/src/tests/split.rs), [tests/create.rs](../contracts/escrow/src/tests/create.rs), [sandbox/approve.rs](../contracts/integration-tests/tests/approve.rs) |
+| R-03 | Revenue split | Contract | Implemented | [split.rs](../contracts/escrow/src/split.rs), [payout.rs](../contracts/escrow/src/payout.rs) | [tests/split.rs](../contracts/escrow/src/tests/split.rs), [tests/create.rs](../contracts/escrow/src/tests/create.rs), [sandbox/approve.rs](../contracts/integration-tests/tests/approve.rs) |
 | R-04 | Approver and refund account | Contract | Implemented | [create.rs](../contracts/escrow/src/create.rs), [signature.rs](../contracts/escrow/src/signature.rs) | [tests/create.rs](../contracts/escrow/src/tests/create.rs), [tests/signature.rs](../contracts/escrow/src/tests/signature.rs), [sandbox/create_cancel.rs](../contracts/integration-tests/tests/create_cancel.rs) |
 | R-05 | Submit milestone | Contract | Implemented | [milestones.rs](../contracts/escrow/src/milestones.rs) | [tests/submit.rs](../contracts/escrow/src/tests/submit.rs), [tests/revision.rs](../contracts/escrow/src/tests/revision.rs), [sandbox/zero_balance.rs](../contracts/integration-tests/tests/zero_balance.rs) |
 | R-06 | Signed approval (NEAR, EVM, Solana) | Contract | Partial | [milestones.rs](../contracts/escrow/src/milestones.rs), [signature.rs](../contracts/escrow/src/signature.rs) | [tests/approve.rs](../contracts/escrow/src/tests/approve.rs), [tests/signature.rs](../contracts/escrow/src/tests/signature.rs), [sandbox/approve.rs](../contracts/integration-tests/tests/approve.rs) |
@@ -114,7 +114,7 @@ after the link is shared (the creator cancels and creates a new escrow instead).
 | R-15 | Invite the other party | Backend | Planned | | |
 | R-16 | "My escrows" page | Backend + frontend | Planned | | |
 | R-17 | Request milestone revision | Contract | Implemented | [milestones.rs](../contracts/escrow/src/milestones.rs) | [tests/revision.rs](../contracts/escrow/src/tests/revision.rs), [tests/auto_release.rs](../contracts/escrow/src/tests/auto_release.rs), [sandbox/revision.rs](../contracts/integration-tests/tests/revision.rs), [sandbox/auto_release.rs](../contracts/integration-tests/tests/auto_release.rs) |
-| R-18 | Refund by freelancer | Contract | Partial | [refund.rs](../contracts/escrow/src/refund.rs) | [tests/refund.rs](../contracts/escrow/src/tests/refund.rs), [sandbox/refund.rs](../contracts/integration-tests/tests/refund.rs), [sandbox/retry.rs](../contracts/integration-tests/tests/retry.rs) |
+| R-18 | Refund by freelancer | Contract | Implemented | [refund.rs](../contracts/escrow/src/refund.rs) | [tests/refund.rs](../contracts/escrow/src/tests/refund.rs), [sandbox/refund.rs](../contracts/integration-tests/tests/refund.rs), [sandbox/retry.rs](../contracts/integration-tests/tests/retry.rs) |
 | R-19 | 0.5% platform fee | Contract | Implemented | [split.rs](../contracts/escrow/src/split.rs), [payout.rs](../contracts/escrow/src/payout.rs), [create.rs](../contracts/escrow/src/create.rs) | [tests/split.rs](../contracts/escrow/src/tests/split.rs), [tests/approve.rs](../contracts/escrow/src/tests/approve.rs), [tests/create.rs](../contracts/escrow/src/tests/create.rs), [sandbox/approve.rs](../contracts/integration-tests/tests/approve.rs), [sandbox/refund.rs](../contracts/integration-tests/tests/refund.rs), [sandbox/create_cancel.rs](../contracts/integration-tests/tests/create_cancel.rs) |
 | R-20 | Storage registration and payout retry | Contract + backend | Partial | [payout.rs](../contracts/escrow/src/payout.rs) | [tests/payout.rs](../contracts/escrow/src/tests/payout.rs), [tests/retry.rs](../contracts/escrow/src/tests/retry.rs), [sandbox/approve.rs](../contracts/integration-tests/tests/approve.rs), [sandbox/retry.rs](../contracts/integration-tests/tests/retry.rs), [sandbox/zero_balance.rs](../contracts/integration-tests/tests/zero_balance.rs) |
 | R-21 | Join without an account (guest token) | Backend + frontend | Planned | | |
@@ -169,12 +169,12 @@ It is applied to the milestone amount after the platform fee (R-19). Recipients 
 registered on the USDC contract by the backend before the escrow goes on-chain (R-20).
 Any rounding remainder goes to the first recipient.
 
-- [ ] A split that does not total 10,000 bps is rejected, by the backend and by `create_escrow`.
+- [x] A split that does not total 10,000 bps is rejected by `create_escrow`.
 - [x] With 2 and 3 recipients, each receives the correct share.
 
-*Partial:* `create_escrow` rejects such a split, as well as more than 10 recipients,
-duplicates, zero shares and the contract as a recipient; the backend check is part of
-R-23, which is not built yet.
+`create_escrow` also rejects more than 10 recipients, duplicates, zero shares and the
+contract as a recipient. The backend rejects the same splits when the terms are
+submitted; that check is the R-23 criterion on submissions that break R-03.
 
 #### R-04 — Approver and refund account
 
@@ -214,7 +214,9 @@ with `ecrecover`), and Solana (ed25519).
 *Partial:* the contract verifies all three schemes (architecture.md §5.3), and the unit
 and sandbox tests approve with signatures generated by ed25519-dalek, k256 and borsh in the
 exact byte formats of NEAR `signMessage` (NEP-413), MetaMask `personal_sign` and Phantom
-`signMessage` (D-20). Fixtures captured from the real wallets are not added yet.
+`signMessage` (D-20). The verifiers also accept signatures made by independent JavaScript
+implementations (ethers v6, node:crypto ed25519, the borsh JS package with the NEP-413
+schema). Fixtures captured from the real wallets are not added yet.
 
 #### R-07 — Auto-release
 
@@ -251,12 +253,11 @@ trigger a refund.
 
 - [x] Only the freelancer can call it.
 - [x] Milestones in `Submitted`, `RevisionRequested`, or `Released` are rejected.
-- [ ] `refund_account` is registered by the backend before the escrow goes on-chain (R-20).
+- [x] A refund to a `refund_account` that is not registered on the USDC contract yet is kept as a pending payout, and `retry_payout` pays it once the account is registered (R-20).
 - [x] The escrow becomes `Completed` once every milestone is `Released` or `Refunded`.
 
-*Partial:* the contract is done; registering the refund account belongs to the R-20
-backend work. Until it is registered, its refund is kept as a pending payout and is not
-lost (tested in the sandbox).
+Registering `refund_account` before the escrow goes on-chain is backend work and is
+tracked as an R-20 criterion.
 
 #### R-19 — Platform fee 0.5%
 
@@ -294,6 +295,7 @@ sending and restored if the transfer fails again.
 - [x] A transfer to an unregistered account is recorded as pending, not lost.
 - [x] `retry_payout` after registration sends the exact pending amount.
 - [x] Two consecutive `retry_payout` calls do not pay twice.
+- [ ] The backend registers the split recipients and `refund_account` before it calls `create_escrow`.
 - [ ] Pending payouts appear in `GET /escrows/:id` and in the CSV export.
 - [x] Freelancer and client still need a NEAR balance of 0.
 
