@@ -8,7 +8,6 @@
 //! Users never attach a deposit: storage and the 1 yoctoNEAR that each
 //! `ft_transfer` requires are paid from the contract's own NEAR balance.
 
-mod bind;
 mod create;
 mod events;
 mod funding;
@@ -22,7 +21,7 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use signature::Approver;
+pub use signature::{Approver, EscrowTerms, FreelancerSignature};
 pub use split::MAX_SPLIT_RECIPIENTS;
 pub use types::*;
 
@@ -36,10 +35,13 @@ pub const BPS_DENOMINATOR: u16 = 10_000;
 pub const MAX_MILESTONES: usize = 20;
 /// Revision requests allowed per milestone (R-17, D-03).
 pub const MAX_REVISIONS: u8 = 2;
+/// Longest escrow ID accepted by `create_escrow`.
+pub const MAX_ESCROW_ID_LEN: usize = 64;
 
 /// Deploy-time configuration (architecture §5.2). There is no setter: the
-/// values change only by redeploying the contract, and `fee_bps` and
-/// `review_window_sec` are copied into each escrow at creation (D-14).
+/// values change only by redeploying the contract. `create_escrow` requires
+/// the signed `fee_bps` to match, and copies it and `review_window_sec` into
+/// the escrow (D-15).
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Config {
@@ -64,9 +66,8 @@ enum StorageKey {
 #[derive(PanicOnDefault)]
 pub struct VecrowEscrow {
     config: Config,
-    /// ID of the next escrow; IDs start at 1.
-    next_escrow_id: u64,
-    escrows: LookupMap<u64, Escrow>,
+    /// Escrows by the ID the backend chose when the escrow was proposed.
+    escrows: LookupMap<String, Escrow>,
     /// `sha256(borsh(approver key) ‖ nonce)` of every accepted signed action,
     /// so each nonce is used at most once per approver.
     used_nonces: LookupSet<[u8; 32]>,
@@ -97,31 +98,31 @@ impl VecrowEscrow {
                 fee_bps,
                 review_window_sec,
             },
-            next_escrow_id: 1,
             escrows: LookupMap::new(StorageKey::Escrows),
             used_nonces: LookupSet::new(StorageKey::UsedNonces),
         }
     }
 
-    /// Returns an escrow with its milestones, or `None` for an unknown ID.
+    /// Returns an on-chain escrow with its signed terms and milestones, or
+    /// `None` for an unknown ID (including an escrow not on-chain yet).
     pub fn get_escrow(&self, escrow_id: String) -> Option<EscrowView> {
-        let id = parse_escrow_id(&escrow_id)?;
-        self.escrows.get(&id).map(|e| EscrowView::new(id, e))
+        self.escrows
+            .get(&escrow_id)
+            .map(|e| EscrowView::new(&escrow_id, e))
     }
 }
 
 impl VecrowEscrow {
-    /// Loads an escrow by its string ID, or panics.
-    fn load_escrow(&self, escrow_id: &str) -> (u64, Escrow) {
-        let id = parse_escrow_id(escrow_id).unwrap_or_else(|| env::panic_str("unknown escrow"));
-        match self.escrows.get(&id) {
-            Some(escrow) => (id, escrow.clone()),
-            None => env::panic_str("unknown escrow"),
-        }
+    /// Loads an escrow by ID, or panics.
+    fn load_escrow(&self, escrow_id: &str) -> Escrow {
+        self.escrows
+            .get(escrow_id)
+            .cloned()
+            .unwrap_or_else(|| env::panic_str("unknown escrow"))
     }
 
-    fn save_escrow(&mut self, id: u64, escrow: Escrow) {
-        self.escrows.insert(id, escrow);
+    fn save_escrow(&mut self, escrow_id: &str, escrow: Escrow) {
+        self.escrows.insert(escrow_id.to_string(), escrow);
     }
 
     /// Accepts a signed action from `approver`, or panics: the deadline has
@@ -165,17 +166,14 @@ fn require_freelancer(escrow: &Escrow) {
     );
 }
 
-/// Parses an escrow ID in its canonical form: the decimal `u64` without sign
-/// or leading zeros, as returned by `create_escrow`. Anything else is unknown,
-/// so an ID in a signed message or a funding `msg` has exactly one spelling.
-pub fn parse_escrow_id(escrow_id: &str) -> Option<u64> {
-    let canonical = !escrow_id.is_empty()
-        && escrow_id.len() <= 20
-        && escrow_id.bytes().all(|b| b.is_ascii_digit())
-        && !escrow_id.starts_with('0');
-    if canonical {
-        escrow_id.parse().ok()
-    } else {
-        None
-    }
+/// Whether `escrow_id` is a valid escrow ID: 1 to 64 characters from
+/// `a-z`, `0-9`, `-` and `_`, e.g. a lowercase UUID chosen by the backend.
+/// The ID is written in signed messages and sent as the funding `msg`, so it
+/// has no whitespace, separators or uppercase variants.
+pub fn is_valid_escrow_id(escrow_id: &str) -> bool {
+    !escrow_id.is_empty()
+        && escrow_id.len() <= MAX_ESCROW_ID_LEN
+        && escrow_id
+            .bytes()
+            .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_'))
 }

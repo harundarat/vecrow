@@ -10,59 +10,62 @@ fn key(wallet: &Wallet) -> ApproverKey {
 }
 
 #[test]
-fn bind_message_matches_the_documented_bytes() {
+fn terms_message_matches_the_documented_bytes() {
     set_context(RELAYER, T0_MS);
     let wallet = Wallet::evm();
-    let nonce = wallet_fixtures::nonce(0x01);
-    let message = bind_message(
-        &account(CONTRACT),
-        7,
-        &key(&wallet),
-        &account(REFUND),
-        &nonce,
-        1_700_000_000_000,
-    );
+    let terms = default_terms("e7", &wallet);
+    let message = terms_message_of(&terms, &wallet);
     assert_eq!(
         message,
         format!(
-            "Vecrow bind_approver\nContract: escrow.test.near\nEscrow: 7\nApprover: {}\nRefund account: refund.test.near\nNonce: {}\nDeadline: 1700000000000",
-            wallet.label(),
-            "01".repeat(32)
+            "Vecrow create_escrow\nContract: escrow.test.near\nEscrow: e7\nFreelancer: freelancer.test.near\nMilestones: 1000000000,500000000\nSplit: freelancer.test.near:7000,member.test.near:3000\nApprover: {}\nRefund account: refund.test.near\nFee: 50 bps\nDeadline: 1700003600000",
+            wallet.label()
         )
     );
+    assert_eq!(message, super::terms_message(&terms, &wallet.label()));
     assert_eq!(
-        message,
-        wallet_fixtures::bind_message(
-            CONTRACT,
-            "7",
-            &wallet.label(),
-            REFUND,
-            &nonce,
-            1_700_000_000_000
-        )
+        terms_nonce(&message),
+        wallet_fixtures::terms_nonce(&message)
     );
 }
 
+fn terms_message_of(terms: &EscrowTerms, wallet: &Wallet) -> String {
+    let key = ApproverKey::parse(&wallet.approver()).unwrap();
+    crate::signature::terms_message(&account(CONTRACT), terms, &key)
+}
+
 #[test]
-fn milestone_messages_match_the_documented_bytes() {
+fn action_messages_match_the_documented_bytes() {
     let nonce = wallet_fixtures::nonce(0xff);
     for (action, name) in [
-        (MilestoneAction::Approve, "approve_milestone"),
-        (MilestoneAction::RequestRevision, "request_revision"),
+        (Action::Approve, "approve_milestone"),
+        (Action::RequestRevision, "request_revision"),
     ] {
-        let message = milestone_message(action, &account(CONTRACT), 12, 3, &nonce, 42);
+        let message = action_message(action, &account(CONTRACT), "e12", Some(3), &nonce, 42);
         assert_eq!(
             message,
             format!(
-                "Vecrow {name}\nContract: escrow.test.near\nEscrow: 12\nMilestone: 3\nNonce: {}\nDeadline: 42",
+                "Vecrow {name}\nContract: escrow.test.near\nEscrow: e12\nMilestone: 3\nNonce: {}\nDeadline: 42",
                 "ff".repeat(32)
             )
         );
         assert_eq!(
             message,
-            wallet_fixtures::milestone_message(name, CONTRACT, "12", 3, &nonce, 42)
+            wallet_fixtures::milestone_message(name, CONTRACT, "e12", 3, &nonce, 42)
         );
     }
+    let message = action_message(Action::Cancel, &account(CONTRACT), "e12", None, &nonce, 42);
+    assert_eq!(
+        message,
+        format!(
+            "Vecrow cancel\nContract: escrow.test.near\nEscrow: e12\nNonce: {}\nDeadline: 42",
+            "ff".repeat(32)
+        )
+    );
+    assert_eq!(
+        message,
+        wallet_fixtures::cancel_message(CONTRACT, "e12", &nonce, 42)
+    );
 }
 
 #[test]

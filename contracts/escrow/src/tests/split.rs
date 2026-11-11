@@ -106,17 +106,24 @@ fn mul_bps_does_not_overflow() {
 
 #[test]
 fn create_escrow_locks_the_fee_and_window_of_the_time() {
-    // R-19: changing the fee configuration does not affect existing escrows.
-    // The configuration changes only through a redeploy (D-14); here the
-    // stored value is changed directly to simulate one.
+    // R-19: changing the fee configuration does not affect escrows already
+    // on-chain. The configuration changes only through a redeploy (D-15);
+    // here the stored value is changed directly to simulate one. New terms
+    // must then be signed with the new fee.
     let mut contract = new_contract();
     let old = create_default(&mut contract);
     contract.config.fee_bps = 100;
     contract.config.review_window_sec = 60;
-    let new = create_default(&mut contract);
+    let wallet = Wallet::near();
+    let mut terms = default_terms("e2", &wallet);
+    terms.fee_bps = 100;
+    create_with(
+        &mut contract,
+        sign_terms(terms, &freelancer_wallet(), &wallet),
+    );
 
     assert_eq!(view(&contract, &old).fee_bps, FEE_BPS);
     assert_eq!(view(&contract, &old).review_window_sec, WINDOW_SEC);
-    assert_eq!(view(&contract, &new).fee_bps, 100);
-    assert_eq!(view(&contract, &new).review_window_sec, 60);
+    assert_eq!(view(&contract, "e2").fee_bps, 100);
+    assert_eq!(view(&contract, "e2").review_window_sec, 60);
 }

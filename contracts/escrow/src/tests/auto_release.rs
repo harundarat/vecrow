@@ -38,7 +38,7 @@ fn anyone_releases_once_the_window_ends() {
     assert_eq!(escrow.milestones[0].status, MilestoneStatus::Released);
     assert_eq!(escrow.balance, U128(usdc(500)));
     assert!(near_sdk::test_utils::get_logs().contains(
-        &r#"EVENT_JSON:{"standard":"vecrow","version":"1.0.0","event":"milestone_released","data":{"escrow_id":"1","milestone":0,"amount":"1000000000","fee":"5000000","by":"auto_release"}}"#
+        &r#"EVENT_JSON:{"standard":"vecrow","version":"1.0.0","event":"milestone_released","data":{"escrow_id":"e1","milestone":0,"amount":"1000000000","fee":"5000000","by":"auto_release"}}"#
             .to_string()
     ));
 }

@@ -1,8 +1,10 @@
-//! Approver identities and signed actions (R-04, R-06, R-17; D-02).
+//! Signed escrow terms and approver actions (R-01, R-04, R-06, R-17; D-02).
 //!
-//! The approver signs a plain-text message with the wallet they already own.
-//! The contract rebuilds the exact message from the call arguments and checks
-//! the signature for the approver's scheme:
+//! Both parties sign the escrow terms (`create_escrow`): the freelancer with
+//! NEP-413, the client with the approver's wallet. The approver then signs each
+//! action (approve, request a revision, cancel). Every payload is plain text;
+//! the contract rebuilds the exact message from the call arguments and checks
+//! the signature for the signer's scheme:
 //!
 //! | Scheme | Wallet | Signed bytes | `signature` encoding |
 //! | --- | --- | --- | --- |
@@ -12,7 +14,9 @@
 //!
 //! The byte-level format is documented in `docs/architecture.md` §5.3.
 
+use crate::SplitShare;
 use near_sdk::base64::Engine;
+use near_sdk::json_types::U128;
 use near_sdk::{AccountId, borsh, env, near};
 
 /// NEP-413 tag (2^31 + 413), prepended so a signed message can never be a
@@ -30,8 +34,8 @@ pub const NEP413_TAG: u32 = (1 << 31) + 413;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Approver {
     /// A NEAR wallet signing with NEP-413. The contract cannot read access
-    /// keys, so `public_key` is bound here and every later signature must be
-    /// made with it (D-15).
+    /// keys, so `public_key` is part of the terms and every signature of the
+    /// approver must be made with it (D-16).
     Nep413 {
         account_id: AccountId,
         public_key: String,
@@ -65,16 +69,10 @@ impl ApproverKey {
             Approver::Nep413 {
                 account_id,
                 public_key,
-            } => {
-                let encoded = public_key
-                    .strip_prefix("ed25519:")
-                    .ok_or("public_key must be ed25519:<base58>")?;
-                Ok(Self::Nep413 {
-                    account_id: account_id.clone(),
-                    public_key: decode_base58_32(encoded)
-                        .ok_or("public_key must be ed25519:<base58>")?,
-                })
-            }
+            } => Ok(Self::Nep413 {
+                account_id: account_id.clone(),
+                public_key: parse_near_public_key(public_key)?,
+            }),
             Approver::Eip191 { address } => {
                 let hex_part = address
                     .strip_prefix("0x")
@@ -113,8 +111,8 @@ impl ApproverKey {
         }
     }
 
-    /// `{scheme}:{address}` as written on the `Approver:` line of the bind
-    /// message, e.g. `eip191:0xab…` or `nep413:client.near`.
+    /// `{scheme}:{address}` as written on the `Approver:` line of the terms,
+    /// e.g. `eip191:0xab…` or `nep413:client.near`.
     pub fn label(&self) -> String {
         match self.to_approver() {
             Approver::Nep413 { account_id, .. } => format!("nep413:{account_id}"),
@@ -138,6 +136,14 @@ impl ApproverKey {
         }
     }
 
+    /// The ed25519 public key of a NEAR or Solana approver.
+    pub fn ed25519_key(&self) -> Option<&[u8; 32]> {
+        match self {
+            Self::Nep413 { public_key, .. } | Self::Ed25519 { public_key } => Some(public_key),
+            Self::Eip191 { .. } => None,
+        }
+    }
+
     /// Checks `signature` over `message`. `nonce` and `recipient` are the
     /// NEP-413 fields; the other schemes carry the nonce and the contract ID
     /// inside the message text. Returns an error for a malformed signature and
@@ -151,10 +157,7 @@ impl ApproverKey {
     ) -> Result<bool, &'static str> {
         match self {
             Self::Nep413 { public_key, .. } => {
-                let signature = decode_base64_64(signature)
-                    .ok_or("nep413 signature must be base64 of 64 bytes")?;
-                let hash = env::sha256_array(nep413_payload(message, nonce, recipient));
-                Ok(env::ed25519_verify(&signature, hash, public_key))
+                verify_nep413(public_key, message, nonce, recipient, signature)
             }
             Self::Eip191 { address } => {
                 let signature = signature.strip_prefix("0x").unwrap_or(signature);
@@ -181,6 +184,29 @@ impl ApproverKey {
             }
         }
     }
+}
+
+/// Checks a NEP-413 `signMessage` signature (base64, 64 bytes, no
+/// `callbackUrl`) by `public_key`.
+pub fn verify_nep413(
+    public_key: &[u8; 32],
+    message: &str,
+    nonce: &[u8; 32],
+    recipient: &str,
+    signature: &str,
+) -> Result<bool, &'static str> {
+    let signature =
+        decode_base64_64(signature).ok_or("nep413 signature must be base64 of 64 bytes")?;
+    let hash = env::sha256_array(nep413_payload(message, nonce, recipient));
+    Ok(env::ed25519_verify(&signature, hash, public_key))
+}
+
+/// Parses a NEAR public key `ed25519:<base58>`.
+pub fn parse_near_public_key(public_key: &str) -> Result<[u8; 32], &'static str> {
+    public_key
+        .strip_prefix("ed25519:")
+        .and_then(decode_base58_32)
+        .ok_or("public_key must be ed25519:<base58>")
 }
 
 /// `borsh(NEP413_TAG) ‖ borsh(message, nonce, recipient, callback_url = None)`.
@@ -214,51 +240,100 @@ pub fn eip191_payload(message: &str) -> Vec<u8> {
     bytes
 }
 
-/// The action an approver signs for a milestone.
+/// An action the approver signs after the escrow is on-chain.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MilestoneAction {
+pub enum Action {
     Approve,
     RequestRevision,
+    Cancel,
 }
 
-impl MilestoneAction {
+impl Action {
     /// The method name, written on the first line of the message.
     pub fn name(self) -> &'static str {
         match self {
             Self::Approve => "approve_milestone",
             Self::RequestRevision => "request_revision",
+            Self::Cancel => "cancel",
         }
     }
 }
 
-/// The message signed to bind an approver. Lines are separated by `\n`, with
-/// no trailing newline.
-pub fn bind_message(
+/// The escrow terms both parties sign, as passed to `create_escrow`.
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EscrowTerms {
+    /// Chosen by the backend; see `crate::is_valid_escrow_id`.
+    pub escrow_id: String,
+    pub freelancer: AccountId,
+    /// Milestone amounts in USDC base units.
+    pub milestones: Vec<U128>,
+    pub split: Vec<SplitShare>,
+    pub approver: Approver,
+    pub refund_account: AccountId,
+    pub fee_bps: u16,
+    /// The terms can be put on-chain until this time (ms since the Unix epoch).
+    pub deadline_ms: u64,
+}
+
+/// The freelancer's NEP-413 signature of the terms, as returned by the NEAR
+/// wallet's `signMessage`.
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FreelancerSignature {
+    /// `ed25519:<base58>`: the key the freelancer signed with.
+    pub public_key: String,
+    /// base64, 64 bytes.
+    pub signature: String,
+}
+
+/// The message both parties sign for `create_escrow`. Lines are separated by
+/// `\n`, with no trailing newline.
+pub fn terms_message(
     contract_id: &AccountId,
-    escrow_id: u64,
+    terms: &EscrowTerms,
     approver: &ApproverKey,
-    refund_account: &AccountId,
-    nonce: &[u8; 32],
-    deadline_ms: u64,
 ) -> String {
+    let milestones: Vec<String> = terms.milestones.iter().map(|m| m.0.to_string()).collect();
+    let split: Vec<String> = terms
+        .split
+        .iter()
+        .map(|s| format!("{}:{}", s.account_id, s.bps))
+        .collect();
     format!(
-        "Vecrow bind_approver\nContract: {contract_id}\nEscrow: {escrow_id}\nApprover: {}\nRefund account: {refund_account}\nNonce: {}\nDeadline: {deadline_ms}",
+        "Vecrow create_escrow\nContract: {contract_id}\nEscrow: {}\nFreelancer: {}\nMilestones: {}\nSplit: {}\nApprover: {}\nRefund account: {}\nFee: {} bps\nDeadline: {}",
+        terms.escrow_id,
+        terms.freelancer,
+        milestones.join(","),
+        split.join(","),
         approver.label(),
-        hex::encode(nonce),
+        terms.refund_account,
+        terms.fee_bps,
+        terms.deadline_ms,
     )
 }
 
-/// The message signed to approve a milestone or request a revision.
-pub fn milestone_message(
-    action: MilestoneAction,
+/// The NEP-413 nonce of a terms signature: `sha256(message)`. The terms have
+/// no nonce of their own; a new escrow ID makes them unique.
+pub fn terms_nonce(message: &str) -> [u8; 32] {
+    env::sha256_array(message.as_bytes())
+}
+
+/// The message the approver signs for an action. `milestone` is written for
+/// `approve_milestone` and `request_revision` and omitted for `cancel`.
+pub fn action_message(
+    action: Action,
     contract_id: &AccountId,
-    escrow_id: u64,
-    milestone: u32,
+    escrow_id: &str,
+    milestone: Option<u32>,
     nonce: &[u8; 32],
     deadline_ms: u64,
 ) -> String {
+    let milestone = milestone
+        .map(|m| format!("Milestone: {m}\n"))
+        .unwrap_or_default();
     format!(
-        "Vecrow {}\nContract: {contract_id}\nEscrow: {escrow_id}\nMilestone: {milestone}\nNonce: {}\nDeadline: {deadline_ms}",
+        "Vecrow {}\nContract: {contract_id}\nEscrow: {escrow_id}\n{milestone}Nonce: {}\nDeadline: {deadline_ms}",
         action.name(),
         hex::encode(nonce),
     )

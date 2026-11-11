@@ -4,16 +4,15 @@ use crate::signature::{Approver, ApproverKey};
 use near_sdk::json_types::U128;
 use near_sdk::{AccountId, near};
 
-/// Escrow lifecycle (spec §6). Serialized as PascalCase strings, identical in
-/// the contract, the API and the documentation (D-10).
+/// On-chain escrow lifecycle (spec §6). Serialized as PascalCase strings,
+/// identical in the contract, the API and the documentation (D-10). The
+/// backend-only statuses before `Created` never reach the contract.
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EscrowStatus {
-    /// Created; no approver and no funds yet.
+    /// On-chain with the terms both parties signed; waiting for funds.
     Created,
-    /// Approver bound; waiting for funds.
-    ApproverBound,
-    /// USDC received; approver locked.
+    /// USDC received.
     Funded,
     /// Every milestone is `Released` or `Refunded`.
     Completed,
@@ -80,10 +79,10 @@ pub struct Escrow {
     pub fee_bps: u16,
     /// Review window locked at `create_escrow` (R-07).
     pub review_window_sec: u64,
-    /// Set once by `bind_approver` (R-04), then locked.
-    pub approver: Option<ApproverKey>,
-    /// The client's NEAR account for refunds, set with the approver.
-    pub refund_account: Option<AccountId>,
+    /// Chosen and signed by the client (R-04); no method changes it.
+    pub approver: ApproverKey,
+    /// The client's NEAR account for refunds, signed with the terms.
+    pub refund_account: AccountId,
     pub status: EscrowStatus,
     /// USDC held for milestones that are neither released nor refunded.
     /// Equals the total once funded, and decreases with each payout.
@@ -112,8 +111,8 @@ pub struct EscrowView {
     pub split: Vec<SplitShare>,
     pub fee_bps: u16,
     pub review_window_sec: u64,
-    pub approver: Option<Approver>,
-    pub refund_account: Option<AccountId>,
+    pub approver: Approver,
+    pub refund_account: AccountId,
     /// Sum of all milestone amounts.
     pub total: U128,
     /// USDC still held for unreleased, unrefunded milestones.
@@ -125,7 +124,7 @@ pub struct EscrowView {
 }
 
 impl EscrowView {
-    pub fn new(escrow_id: u64, escrow: &Escrow) -> Self {
+    pub fn new(escrow_id: &str, escrow: &Escrow) -> Self {
         Self {
             escrow_id: escrow_id.to_string(),
             freelancer: escrow.freelancer.clone(),
@@ -134,7 +133,7 @@ impl EscrowView {
             split: escrow.split.clone(),
             fee_bps: escrow.fee_bps,
             review_window_sec: escrow.review_window_sec,
-            approver: escrow.approver.as_ref().map(ApproverKey::to_approver),
+            approver: escrow.approver.to_approver(),
             refund_account: escrow.refund_account.clone(),
             total: U128(escrow.total()),
             balance: U128(escrow.balance),

@@ -13,7 +13,7 @@ fn successful_transfer_leaves_nothing_pending() {
     assert_eq!(
         near_sdk::test_utils::get_logs(),
         vec![
-            r#"EVENT_JSON:{"standard":"vecrow","version":"1.0.0","event":"payout","data":{"escrow_id":"1","account_id":"member.test.near","amount":"10","paid":true}}"#
+            r#"EVENT_JSON:{"standard":"vecrow","version":"1.0.0","event":"payout","data":{"escrow_id":"e1","account_id":"member.test.near","amount":"10","paid":true}}"#
         ]
     );
 }
@@ -42,7 +42,7 @@ fn failed_transfers_are_recorded_per_account() {
     assert_eq!(
         near_sdk::test_utils::get_logs(),
         vec![
-            r#"EVENT_JSON:{"standard":"vecrow","version":"1.0.0","event":"payout","data":{"escrow_id":"1","account_id":"member.test.near","amount":"5","paid":false}}"#
+            r#"EVENT_JSON:{"standard":"vecrow","version":"1.0.0","event":"payout","data":{"escrow_id":"e1","account_id":"member.test.near","amount":"5","paid":false}}"#
         ]
     );
 }

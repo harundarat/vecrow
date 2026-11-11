@@ -10,7 +10,7 @@ use serde_json::json;
 async fn release_one_refund_the_rest_and_complete() -> anyhow::Result<()> {
     let env = setup().await?;
     let wallet = Wallet::near(env.client.id());
-    let id = env.funded_escrow(&wallet, 1).await?;
+    let id = env.funded_escrow(&wallet).await?;
     env.submit(&id, 0).await?.into_result()?;
     env.approve(&id, 0, &wallet, 2).await?.into_result()?;
 
@@ -59,7 +59,7 @@ async fn release_one_refund_the_rest_and_complete() -> anyhow::Result<()> {
 #[tokio::test]
 async fn refund_all_pending_milestones() -> anyhow::Result<()> {
     let env = setup().await?;
-    let id = env.funded_escrow(&Wallet::evm(), 1).await?;
+    let id = env.funded_escrow(&Wallet::evm()).await?;
     env.call(
         &env.freelancer,
         "refund_unsubmitted",

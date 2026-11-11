@@ -23,7 +23,7 @@ async fn wait_until(env: &Env, target_ms: u64) -> anyhow::Result<()> {
 async fn auto_release_after_a_short_demo_window() -> anyhow::Result<()> {
     let env = setup_with_window(DEMO_WINDOW_SEC).await?;
     let wallet = Wallet::evm();
-    let id = env.funded_escrow(&wallet, 1).await?;
+    let id = env.funded_escrow(&wallet).await?;
     assert_eq!(
         env.get_escrow(&id).await?["review_window_sec"],
         DEMO_WINDOW_SEC
@@ -58,7 +58,7 @@ async fn auto_release_after_a_short_demo_window() -> anyhow::Result<()> {
 async fn revision_stops_the_timer_until_resubmission() -> anyhow::Result<()> {
     let env = setup_with_window(DEMO_WINDOW_SEC).await?;
     let wallet = Wallet::solana();
-    let id = env.funded_escrow(&wallet, 1).await?;
+    let id = env.funded_escrow(&wallet).await?;
     env.submit(&id, 0).await?.into_result()?;
     env.signed_milestone_action("request_revision", &id, 0, &wallet, 2)
         .await?

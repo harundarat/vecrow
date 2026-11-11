@@ -14,7 +14,7 @@ fn freelancer_submits_a_pending_milestone() {
     assert_eq!(escrow.milestones[0].status, MilestoneStatus::Pending);
     assert_eq!(
         near_sdk::test_utils::get_logs().last().unwrap(),
-        r#"EVENT_JSON:{"standard":"vecrow","version":"1.0.0","event":"milestone_submitted","data":{"escrow_id":"1","milestone":1,"submitted_at_ms":1700000000005}}"#
+        r#"EVENT_JSON:{"standard":"vecrow","version":"1.0.0","event":"milestone_submitted","data":{"escrow_id":"e1","milestone":1,"submitted_at_ms":1700000000005}}"#
     );
 }
 
@@ -40,13 +40,11 @@ fn relayer_cannot_submit_for_the_freelancer() {
 fn unfunded_escrows_reject_submission() {
     let mut contract = new_contract();
     let created = create_default(&mut contract);
-    let bound = create_default(&mut contract);
-    bind(&mut contract, &bound, &Wallet::evm(), 1);
     let cancelled = create_default(&mut contract);
     set_context(FREELANCER, T0_MS);
     contract.cancel(cancelled.clone());
 
-    for id in [created, bound, cancelled] {
+    for id in [created, cancelled] {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             submit(&mut contract, &id, 0, T0_MS)
         }));
@@ -60,10 +58,9 @@ fn unfunded_escrows_reject_submission() {
 
 #[test]
 #[should_panic(expected = "escrow is not funded")]
-fn approver_bound_escrow_rejects_submission() {
+fn created_escrow_rejects_submission() {
     let mut contract = new_contract();
     let id = create_default(&mut contract);
-    bind(&mut contract, &id, &Wallet::evm(), 1);
     submit(&mut contract, &id, 0, T0_MS);
 }
 

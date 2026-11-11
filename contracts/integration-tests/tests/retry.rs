@@ -11,14 +11,15 @@ use serde_json::json;
 async fn pending_payout_is_retried_after_registration() -> anyhow::Result<()> {
     let env = setup().await?;
     let newcomer = env.new_account("newcomer", 1).await?;
+    let wallet = Wallet::solana();
     let id = env
         .create_escrow(
             &[usdc(1_000)],
             &[(env.freelancer.id(), 7_000), (newcomer.id(), 3_000)],
+            &wallet,
         )
         .await?;
-    let wallet = Wallet::solana();
-    env.bind_and_fund(&id, &wallet, usdc(1_000)).await?;
+    env.mint_and_fund(&id, usdc(1_000)).await?;
     env.submit(&id, 0).await?.into_result()?;
     env.approve(&id, 0, &wallet, 1).await?.into_result()?;
     let pending = json!([{ "account_id": newcomer.id(), "amount": "298500000" }]);
@@ -58,16 +59,13 @@ async fn pending_payout_is_retried_after_registration() -> anyhow::Result<()> {
 #[tokio::test]
 async fn concurrent_retries_pay_once() -> anyhow::Result<()> {
     let env = setup().await?;
-    // The refund account was not registered before binding.
+    // The refund account was not registered before the escrow went on-chain.
     let refundee = env.new_account("refundee", 1).await?;
-    let id = env.create_default_escrow().await?;
-    let wallet = Wallet::evm();
-    let args = env.bind_args(&id, &wallet, refundee.id(), 1, env.deadline_ms().await?);
-    env.call(&env.relayer, "bind_approver", args)
-        .await?
-        .into_result()?;
-    env.mint(env.client.id(), usdc(1_500)).await?;
-    assert_eq!(env.fund(&id, usdc(1_500)).await?, usdc(1_500));
+    let mut terms = env.default_terms().await?;
+    terms.refund_account = refundee.id().clone();
+    let id = terms.escrow_id.clone();
+    env.create(&terms, &Wallet::evm()).await?.into_result()?;
+    env.mint_and_fund(&id, usdc(1_500)).await?;
 
     env.call(
         &env.freelancer,

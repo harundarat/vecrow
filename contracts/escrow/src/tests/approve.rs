@@ -39,7 +39,7 @@ fn release_emits_event_with_amount_and_fee() {
     let id = submitted(&mut contract, &Wallet::near());
     approve(&mut contract, &id, 0, &Wallet::near(), 1, T0_MS);
     assert!(near_sdk::test_utils::get_logs().contains(
-        &r#"EVENT_JSON:{"standard":"vecrow","version":"1.0.0","event":"milestone_released","data":{"escrow_id":"1","milestone":0,"amount":"1000000000","fee":"5000000","by":"approve_milestone"}}"#
+        &r#"EVENT_JSON:{"standard":"vecrow","version":"1.0.0","event":"milestone_released","data":{"escrow_id":"e1","milestone":0,"amount":"1000000000","fee":"5000000","by":"approve_milestone"}}"#
             .to_string()
     ));
 }
@@ -59,7 +59,7 @@ fn approving_every_milestone_completes_the_escrow() {
     assert_eq!(escrow.balance, U128(0));
     assert_eq!(
         near_sdk::test_utils::get_logs().last().unwrap(),
-        r#"EVENT_JSON:{"standard":"vecrow","version":"1.0.0","event":"escrow_completed","data":{"escrow_id":"1"}}"#
+        r#"EVENT_JSON:{"standard":"vecrow","version":"1.0.0","event":"escrow_completed","data":{"escrow_id":"e1"}}"#
     );
 }
 
@@ -90,12 +90,26 @@ fn reused_approval_nonce_is_rejected() {
 
 #[test]
 #[should_panic(expected = "nonce already used")]
-fn bind_nonce_cannot_be_reused_for_approval() {
+fn approval_nonce_is_used_once_across_escrows() {
     let mut contract = new_contract();
     let wallet = Wallet::evm();
-    let id = submitted(&mut contract, &wallet);
-    // `funded_escrow` bound the approver with nonce 200.
-    approve(&mut contract, &id, 0, &wallet, 200, T0_MS);
+    let first = submitted(&mut contract, &wallet);
+    let second = submitted(&mut contract, &wallet);
+    approve(&mut contract, &first, 0, &wallet, 7, T0_MS);
+    approve(&mut contract, &second, 0, &wallet, 7, T0_MS);
+}
+
+#[test]
+fn nonces_are_tracked_per_approver() {
+    let mut contract = new_contract();
+    let first = submitted(&mut contract, &Wallet::evm());
+    let second = submitted(&mut contract, &Wallet::solana());
+    approve(&mut contract, &first, 0, &Wallet::evm(), 7, T0_MS);
+    approve(&mut contract, &second, 0, &Wallet::solana(), 7, T0_MS);
+    assert_eq!(
+        view(&contract, &second).milestones[0].status,
+        MilestoneStatus::Released
+    );
 }
 
 #[test]
@@ -159,7 +173,7 @@ fn approval_signed_for_another_escrow_is_rejected() {
     let mut contract = new_contract();
     let wallet = Wallet::solana();
     let id = submitted(&mut contract, &wallet);
-    let (nonce, signature) = sign_milestone(&wallet, "approve_milestone", "2", 0, 1, DEADLINE_MS);
+    let (nonce, signature) = sign_milestone(&wallet, "approve_milestone", "e2", 0, 1, DEADLINE_MS);
     set_context(RELAYER, T0_MS);
     contract.approve_milestone(id, 0, nonce, DEADLINE_MS, signature);
 }
@@ -199,14 +213,13 @@ fn released_milestone_cannot_be_approved_again() {
 fn unfunded_escrow_cannot_be_approved() {
     let mut contract = new_contract();
     let wallet = Wallet::evm();
-    let id = create_default(&mut contract);
-    bind(&mut contract, &id, &wallet, 1);
+    let id = create_escrow_with(&mut contract, &wallet);
     approve(&mut contract, &id, 0, &wallet, 2, T0_MS);
 }
 
 #[test]
 fn changing_the_fee_config_does_not_affect_existing_escrows() {
-    // R-19: the fee is locked at creation. A redeploy with a new fee (D-14)
+    // R-19: the fee is locked at creation. A redeploy with a new fee (D-15)
     // is simulated by changing the stored configuration.
     let mut contract = new_contract();
     let wallet = Wallet::near();
@@ -220,9 +233,13 @@ fn changing_the_fee_config_does_not_affect_existing_escrows() {
 fn zero_amounts_are_not_transferred() {
     let mut contract = new_contract();
     let wallet = Wallet::near();
-    set_context(FREELANCER, T0_MS);
-    let id = contract.create_escrow(vec![U128(1)], split_70_30());
-    bind(&mut contract, &id, &wallet, 1);
+    let mut terms = default_terms("e1", &wallet);
+    terms.milestones = vec![U128(1)];
+    create_with(
+        &mut contract,
+        sign_terms(terms, &freelancer_wallet(), &wallet),
+    );
+    let id = "e1".to_string();
     fund(&mut contract, &id, 1);
     submit(&mut contract, &id, 0, T0_MS);
     approve(&mut contract, &id, 0, &wallet, 2, T0_MS);

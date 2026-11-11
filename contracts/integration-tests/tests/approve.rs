@@ -22,7 +22,7 @@ async fn approval_from_each_wallet_pays_fee_and_split() -> anyhow::Result<()> {
         env.escrow.id(),
     ];
     for (i, wallet) in wallets.iter().enumerate() {
-        let id = env.funded_escrow(wallet, i as u8).await?;
+        let id = env.funded_escrow(wallet).await?;
         env.submit(&id, 0).await?.into_result()?;
         let before = env.balances(&accounts).await?;
 
@@ -48,7 +48,7 @@ async fn approval_from_each_wallet_pays_fee_and_split() -> anyhow::Result<()> {
 async fn approving_every_milestone_pays_exactly_the_total() -> anyhow::Result<()> {
     let env = setup().await?;
     let wallet = Wallet::evm();
-    let id = env.funded_escrow(&wallet, 1).await?;
+    let id = env.funded_escrow(&wallet).await?;
     let accounts = [env.treasury.id(), env.freelancer.id(), env.member.id()];
     let before = env.balances(&accounts).await?;
     for (milestone, nonce) in [(0, 2), (1, 3)] {
@@ -70,7 +70,7 @@ async fn approving_every_milestone_pays_exactly_the_total() -> anyhow::Result<()
 async fn reused_nonce_expired_payload_and_wrong_signer_are_rejected() -> anyhow::Result<()> {
     let env = setup().await?;
     let wallet = Wallet::solana();
-    let id = env.funded_escrow(&wallet, 1).await?;
+    let id = env.funded_escrow(&wallet).await?;
     env.submit(&id, 0).await?.into_result()?;
     env.submit(&id, 1).await?.into_result()?;
     env.approve(&id, 0, &wallet, 2).await?.into_result()?;
@@ -97,14 +97,15 @@ async fn reused_nonce_expired_payload_and_wrong_signer_are_rejected() -> anyhow:
 async fn transfer_to_unregistered_recipient_is_kept_as_pending() -> anyhow::Result<()> {
     let env = setup().await?;
     let newcomer = env.new_account("newcomer", 1).await?;
+    let wallet = Wallet::evm();
     let id = env
         .create_escrow(
             &[usdc(1_000)],
             &[(env.freelancer.id(), 7_000), (newcomer.id(), 3_000)],
+            &wallet,
         )
         .await?;
-    let wallet = Wallet::evm();
-    env.bind_and_fund(&id, &wallet, usdc(1_000)).await?;
+    env.mint_and_fund(&id, usdc(1_000)).await?;
     env.submit(&id, 0).await?.into_result()?;
     env.approve(&id, 0, &wallet, 1).await?.into_result()?;
 
@@ -125,7 +126,7 @@ async fn transfer_to_unregistered_recipient_is_kept_as_pending() -> anyhow::Resu
 #[tokio::test]
 async fn on_payout_is_private() -> anyhow::Result<()> {
     let env = setup().await?;
-    let id = env.funded_escrow(&Wallet::evm(), 1).await?;
+    let id = env.funded_escrow(&Wallet::evm()).await?;
     let result = env
         .call(
             &env.member,
@@ -151,9 +152,9 @@ async fn largest_split_is_paid_within_the_gas_limit() -> anyhow::Result<()> {
         recipients.push(account);
     }
     let split: Vec<_> = recipients.iter().map(|a| (a.id(), 1_000)).collect();
-    let id = env.create_escrow(&[usdc(1_000)], &split).await?;
     let wallet = Wallet::evm();
-    env.bind_and_fund(&id, &wallet, usdc(1_000)).await?;
+    let id = env.create_escrow(&[usdc(1_000)], &split, &wallet).await?;
+    env.mint_and_fund(&id, usdc(1_000)).await?;
     env.submit(&id, 0).await?.into_result()?;
 
     let result = env.approve(&id, 0, &wallet, 1).await?;

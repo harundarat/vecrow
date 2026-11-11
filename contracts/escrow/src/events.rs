@@ -13,16 +13,12 @@ pub enum VecrowEvent {
     EscrowCreated {
         escrow_id: String,
         freelancer: AccountId,
+        approver: Approver,
+        refund_account: AccountId,
         total: U128,
     },
     #[event_version("1.0.0")]
     EscrowCancelled { escrow_id: String },
-    #[event_version("1.0.0")]
-    ApproverBound {
-        escrow_id: String,
-        approver: Approver,
-        refund_account: AccountId,
-    },
     #[event_version("1.0.0")]
     EscrowFunded {
         escrow_id: String,

@@ -12,25 +12,21 @@ async fn exact_below_and_above_total() -> anyhow::Result<()> {
     env.mint(env.client.id(), usdc(10_000)).await?;
 
     // Below the total: returned in full, status unchanged.
-    let below = env.create_default_escrow().await?;
-    env.bind(&below, &Wallet::evm(), 1).await?.into_result()?;
-    assert_eq!(env.fund(&below, usdc(1_499)).await?, 0);
-    assert_eq!(env.status(&below).await?, "ApproverBound");
+    let id = env.create_escrow_for(&Wallet::evm()).await?;
+    assert_eq!(env.fund(&id, usdc(1_499)).await?, 0);
+    assert_eq!(env.status(&id).await?, "Created");
     assert_eq!(env.balance(env.client.id()).await?, usdc(10_000));
     assert_eq!(env.balance(env.escrow.id()).await?, 0);
 
     // Exactly the total.
-    assert_eq!(env.fund(&below, usdc(1_500)).await?, usdc(1_500));
-    let escrow = env.get_escrow(&below).await?;
+    assert_eq!(env.fund(&id, usdc(1_500)).await?, usdc(1_500));
+    let escrow = env.get_escrow(&id).await?;
     assert_eq!(escrow["status"], "Funded");
     assert_eq!(escrow["balance"], usdc(1_500).to_string());
     assert_eq!(env.balance(env.escrow.id()).await?, usdc(1_500));
 
     // Above the total: funded with exactly the total, excess returned.
-    let above = env.create_default_escrow().await?;
-    env.bind(&above, &Wallet::solana(), 2)
-        .await?
-        .into_result()?;
+    let above = env.create_escrow_for(&Wallet::solana()).await?;
     assert_eq!(env.fund(&above, usdc(2_000)).await?, usdc(1_500));
     let escrow = env.get_escrow(&above).await?;
     assert_eq!(escrow["status"], "Funded");
@@ -45,30 +41,22 @@ async fn transfers_to_escrows_not_awaiting_funds_are_returned() -> anyhow::Resul
     let env = setup().await?;
     env.mint(env.client.id(), usdc(10_000)).await?;
 
-    // Created: no approver yet.
-    let created = env.create_default_escrow().await?;
-    assert_eq!(env.fund(&created, usdc(1_500)).await?, 0);
-    assert_eq!(env.status(&created).await?, "Created");
-
     // Funded: a second transfer is returned.
-    let funded = env.create_default_escrow().await?;
-    env.bind(&funded, &Wallet::evm(), 1).await?.into_result()?;
+    let funded = env.create_escrow_for(&Wallet::evm()).await?;
     assert_eq!(env.fund(&funded, usdc(1_500)).await?, usdc(1_500));
     assert_eq!(env.fund(&funded, usdc(1_500)).await?, 0);
 
     // Cancelled.
-    let cancelled = env.create_default_escrow().await?;
-    env.bind(&cancelled, &Wallet::solana(), 2)
-        .await?
-        .into_result()?;
+    let cancelled = env.create_escrow_for(&Wallet::solana()).await?;
     env.call(&env.freelancer, "cancel", json!({ "escrow_id": cancelled }))
         .await?
         .into_result()?;
     assert_eq!(env.fund(&cancelled, usdc(1_500)).await?, 0);
 
-    // Unknown escrow ID.
-    assert_eq!(env.fund("999", usdc(1_500)).await?, 0);
-    assert_eq!(env.fund("not-an-id", usdc(1_500)).await?, 0);
+    // Unknown escrow IDs, including one the backend has not put on-chain.
+    let not_on_chain = env.next_escrow_id();
+    assert_eq!(env.fund(&not_on_chain, usdc(1_500)).await?, 0);
+    assert_eq!(env.fund("Not An ID", usdc(1_500)).await?, 0);
 
     // Only the one accepted transfer stayed in the contract.
     assert_eq!(env.balance(env.escrow.id()).await?, usdc(1_500));
@@ -95,21 +83,20 @@ async fn other_tokens_are_returned() -> anyhow::Result<()> {
         .await?
         .into_result()?;
 
-    let id = env.create_default_escrow().await?;
-    env.bind(&id, &Wallet::evm(), 1).await?.into_result()?;
+    let id = env.create_escrow_for(&Wallet::evm()).await?;
     assert_eq!(
         env.transfer_call(&fake, &env.client, &id, usdc(1_500))
             .await?,
         0
     );
-    assert_eq!(env.status(&id).await?, "ApproverBound");
+    assert_eq!(env.status(&id).await?, "Created");
     Ok(())
 }
 
 #[tokio::test]
 async fn funded_escrow_cannot_be_cancelled() -> anyhow::Result<()> {
     let env = setup().await?;
-    let id = env.funded_escrow(&Wallet::near(env.client.id()), 1).await?;
+    let id = env.funded_escrow(&Wallet::near(env.client.id())).await?;
     assert_failure(
         env.call(&env.freelancer, "cancel", json!({ "escrow_id": id }))
             .await?,

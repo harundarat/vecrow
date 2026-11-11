@@ -16,7 +16,7 @@ fn freelancer_refunds_one_pending_milestone_without_fee() {
     assert_eq!(escrow.balance, U128(usdc(1_000)));
     assert_eq!(escrow.status, EscrowStatus::Funded);
     assert!(near_sdk::test_utils::get_logs().contains(
-        &r#"EVENT_JSON:{"standard":"vecrow","version":"1.0.0","event":"milestones_refunded","data":{"escrow_id":"1","milestones":[1],"amount":"500000000","refund_account":"refund.test.near"}}"#
+        &r#"EVENT_JSON:{"standard":"vecrow","version":"1.0.0","event":"milestones_refunded","data":{"escrow_id":"e1","milestones":[1],"amount":"500000000","refund_account":"refund.test.near"}}"#
             .to_string()
     ));
 }
@@ -145,6 +145,5 @@ fn refund_all_without_pending_milestones_is_rejected() {
 fn unfunded_escrow_cannot_be_refunded() {
     let mut contract = new_contract();
     let id = create_default(&mut contract);
-    bind(&mut contract, &id, &Wallet::near(), 1);
     refund(&mut contract, FREELANCER, &id, None);
 }

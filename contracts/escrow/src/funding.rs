@@ -11,11 +11,11 @@ impl VecrowEscrow {
     /// `ft_transfer_call(receiver_id = this contract, msg = escrow_id)`.
     /// Returns the amount the token contract must give back to `sender_id`:
     ///
-    /// - USDC of at least the total, to an `ApproverBound` escrow: the escrow
-    ///   becomes `Funded` with exactly the total, and the excess is returned.
+    /// - USDC of at least the total, to a `Created` escrow: the escrow becomes
+    ///   `Funded` with exactly the total, and the excess is returned.
     /// - Anything else is returned in full: less than the total, an escrow in
-    ///   any other status, an unknown or malformed `escrow_id`, or a token
-    ///   other than the configured USDC.
+    ///   any other status, an unknown `escrow_id` (including one that is not
+    ///   on-chain yet), or a token other than the configured USDC.
     ///
     /// Returned deposits are not charged a fee.
     pub fn ft_on_transfer(
@@ -45,9 +45,8 @@ impl VecrowEscrow {
         if env::predecessor_account_id() != self.config.usdc_contract_id {
             return Err("unsupported token");
         }
-        let id = parse_escrow_id(msg).ok_or("unknown escrow")?;
-        let mut escrow = self.escrows.get(&id).cloned().ok_or("unknown escrow")?;
-        if escrow.status != EscrowStatus::ApproverBound {
+        let mut escrow = self.escrows.get(msg).cloned().ok_or("unknown escrow")?;
+        if escrow.status != EscrowStatus::Created {
             return Err("escrow is not awaiting funds");
         }
         let total = escrow.total();
@@ -58,9 +57,9 @@ impl VecrowEscrow {
         escrow.status = EscrowStatus::Funded;
         escrow.balance = total;
         escrow.funded_at_ms = Some(env::block_timestamp_ms());
-        self.save_escrow(id, escrow);
+        self.save_escrow(msg, escrow);
         VecrowEvent::EscrowFunded {
-            escrow_id: id.to_string(),
+            escrow_id: msg.to_string(),
             sender_id: sender_id.clone(),
             amount: U128(total),
         }

@@ -22,7 +22,7 @@ fn each_wallet_scheme_requests_a_revision() {
         assert!(ft_transfers().is_empty(), "no funds move");
         assert_eq!(
             near_sdk::test_utils::get_logs().last().unwrap(),
-            r#"EVENT_JSON:{"standard":"vecrow","version":"1.0.0","event":"revision_requested","data":{"escrow_id":"1","milestone":0,"revision_count":1}}"#
+            r#"EVENT_JSON:{"standard":"vecrow","version":"1.0.0","event":"revision_requested","data":{"escrow_id":"e1","milestone":0,"revision_count":1}}"#
         );
     }
 }

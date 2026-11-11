@@ -8,7 +8,7 @@ use common::*;
 async fn two_revisions_then_approval() -> anyhow::Result<()> {
     let env = setup().await?;
     let wallet = Wallet::near(env.client.id());
-    let id = env.funded_escrow(&wallet, 1).await?;
+    let id = env.funded_escrow(&wallet).await?;
     env.submit(&id, 0).await?.into_result()?;
 
     // Not signed by the approver.

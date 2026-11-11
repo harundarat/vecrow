@@ -13,7 +13,7 @@ impl VecrowEscrow {
     /// cannot. Milestones become `Refunded`, no fee is charged, and the amount
     /// is sent in one transfer.
     pub fn refund_unsubmitted(&mut self, escrow_id: String, milestone: Option<u32>) {
-        let (id, mut escrow) = self.load_escrow(&escrow_id);
+        let mut escrow = self.load_escrow(&escrow_id);
         require_freelancer(&escrow);
         require!(
             escrow.status == EscrowStatus::Funded,
@@ -48,21 +48,18 @@ impl VecrowEscrow {
             .balance
             .checked_sub(amount)
             .unwrap_or_else(|| env::panic_str("escrow balance is too low"));
-        let refund_account = escrow
-            .refund_account
-            .clone()
-            .unwrap_or_else(|| env::panic_str("escrow has no refund account"));
+        let refund_account = escrow.refund_account.clone();
         require_payout_gas(1);
 
         VecrowEvent::MilestonesRefunded {
-            escrow_id,
+            escrow_id: escrow_id.clone(),
             milestones: indices,
             amount: U128(amount),
             refund_account: refund_account.clone(),
         }
         .emit();
-        self.payout(id, &refund_account, amount).detach();
-        complete_if_done(id, &mut escrow);
-        self.save_escrow(id, escrow);
+        self.payout(&escrow_id, &refund_account, amount).detach();
+        complete_if_done(&escrow_id, &mut escrow);
+        self.save_escrow(&escrow_id, escrow);
     }
 }

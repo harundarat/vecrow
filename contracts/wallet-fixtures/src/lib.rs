@@ -11,9 +11,9 @@
 //! | MetaMask (EIP-191) | `personal_sign(message)` | `keccak256("\x19Ethereum Signed Message:\n" ‖ len ‖ message)` | `0x` hex, 65 bytes `r‖s‖v`, `v` = 27/28 |
 //! | Phantom (Solana) | `signMessage(utf8 bytes)` | raw message bytes | base58, 64 bytes |
 //!
-//! The message builders below follow the Vecrow signed-action format in
-//! `docs/architecture.md` §5.3 and are written independently of the contract's
-//! own builder.
+//! The message builders below follow the Vecrow signed-payload format in
+//! `docs/architecture.md` §5.3 (escrow terms and approver actions) and are
+//! written independently of the contract's own builders.
 
 use base64::Engine;
 use borsh::BorshSerialize;
@@ -35,17 +35,59 @@ pub fn nonce_hex(nonce: &[u8; 32]) -> String {
     hex::encode(nonce)
 }
 
-/// Message signed to bind an approver (`bind_approver`).
-pub fn bind_message(
+/// Escrow terms as both parties sign them for `create_escrow`.
+#[derive(Clone, Debug)]
+pub struct Terms {
+    pub contract_id: String,
+    pub escrow_id: String,
+    pub freelancer: String,
+    /// Milestone amounts in USDC base units.
+    pub milestones: Vec<u128>,
+    /// `(account, bps)` in order.
+    pub split: Vec<(String, u16)>,
+    /// `{scheme}:{address}`, e.g. `eip191:0xab…`.
+    pub approver: String,
+    pub refund_account: String,
+    pub fee_bps: u16,
+    pub deadline_ms: u64,
+}
+
+/// Message both parties sign for `create_escrow`.
+pub fn terms_message(t: &Terms) -> String {
+    let milestones: Vec<String> = t.milestones.iter().map(u128::to_string).collect();
+    let split: Vec<String> = t
+        .split
+        .iter()
+        .map(|(account, bps)| format!("{account}:{bps}"))
+        .collect();
+    format!(
+        "Vecrow create_escrow\nContract: {}\nEscrow: {}\nFreelancer: {}\nMilestones: {}\nSplit: {}\nApprover: {}\nRefund account: {}\nFee: {} bps\nDeadline: {}",
+        t.contract_id,
+        t.escrow_id,
+        t.freelancer,
+        milestones.join(","),
+        split.join(","),
+        t.approver,
+        t.refund_account,
+        t.fee_bps,
+        t.deadline_ms
+    )
+}
+
+/// The NEP-413 nonce used to sign terms: `sha256(message)`.
+pub fn terms_nonce(message: &str) -> [u8; 32] {
+    Sha256::digest(message.as_bytes()).into()
+}
+
+/// Message the approver signs to cancel an unfunded escrow.
+pub fn cancel_message(
     contract_id: &str,
     escrow_id: &str,
-    approver: &str,
-    refund_account: &str,
     nonce: &[u8; 32],
     deadline_ms: u64,
 ) -> String {
     format!(
-        "Vecrow bind_approver\nContract: {contract_id}\nEscrow: {escrow_id}\nApprover: {approver}\nRefund account: {refund_account}\nNonce: {}\nDeadline: {deadline_ms}",
+        "Vecrow cancel\nContract: {contract_id}\nEscrow: {escrow_id}\nNonce: {}\nDeadline: {deadline_ms}",
         nonce_hex(nonce)
     )
 }
@@ -114,7 +156,7 @@ impl NearWallet {
         hex::encode(self.key.verifying_key().as_bytes())
     }
 
-    /// The `approver` argument of `bind_approver` for this wallet.
+    /// `{scheme}:{address}` of this wallet as an approver.
     pub fn approver_label(&self) -> String {
         format!("nep413:{}", self.account_id)
     }
@@ -164,7 +206,7 @@ impl EvmWallet {
         format!("0x{}", hex::encode(&hash[12..]))
     }
 
-    /// The `approver` argument of `bind_approver` for this wallet.
+    /// `{scheme}:{address}` of this wallet as an approver.
     pub fn approver_label(&self) -> String {
         format!("eip191:{}", self.address())
     }
@@ -223,7 +265,7 @@ impl SolanaWallet {
         hex::encode(self.key.verifying_key().as_bytes())
     }
 
-    /// The `approver` argument of `bind_approver` for this wallet.
+    /// `{scheme}:{address}` of this wallet as an approver.
     pub fn approver_label(&self) -> String {
         format!("ed25519:{}", self.address())
     }
@@ -262,6 +304,25 @@ mod tests {
         assert_eq!(
             borsh::to_vec(&NEP413_TAG).unwrap(),
             vec![0x9d, 0x01, 0x00, 0x80]
+        );
+    }
+
+    #[test]
+    fn terms_follow_the_documented_format() {
+        let terms = Terms {
+            contract_id: "escrow.near".into(),
+            escrow_id: "e-1".into(),
+            freelancer: "alice.near".into(),
+            milestones: vec![1_000_000_000, 500_000_000],
+            split: vec![("alice.near".into(), 7_000), ("bob.near".into(), 3_000)],
+            approver: "eip191:0xab".into(),
+            refund_account: "carol.near".into(),
+            fee_bps: 50,
+            deadline_ms: 1_700_000_000_000,
+        };
+        assert_eq!(
+            terms_message(&terms),
+            "Vecrow create_escrow\nContract: escrow.near\nEscrow: e-1\nFreelancer: alice.near\nMilestones: 1000000000,500000000\nSplit: alice.near:7000,bob.near:3000\nApprover: eip191:0xab\nRefund account: carol.near\nFee: 50 bps\nDeadline: 1700000000000"
         );
     }
 

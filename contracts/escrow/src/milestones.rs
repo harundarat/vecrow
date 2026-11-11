@@ -3,7 +3,7 @@
 
 use crate::events::VecrowEvent;
 use crate::payout::ReleaseTrigger;
-use crate::signature::{MilestoneAction, milestone_message, parse_nonce};
+use crate::signature::{Action, action_message, parse_nonce};
 use crate::*;
 
 #[near]
@@ -12,7 +12,7 @@ impl VecrowEscrow {
     /// only on a `Funded` escrow, and only from `Pending` or
     /// `RevisionRequested`. Each submission starts a new review window.
     pub fn submit_milestone(&mut self, escrow_id: String, milestone: u32) {
-        let (id, mut escrow) = self.load_escrow(&escrow_id);
+        let mut escrow = self.load_escrow(&escrow_id);
         require_freelancer(&escrow);
         require_funded(&escrow);
         let now = env::block_timestamp_ms();
@@ -26,7 +26,7 @@ impl VecrowEscrow {
         );
         m.status = MilestoneStatus::Submitted;
         m.submitted_at_ms = Some(now);
-        self.save_escrow(id, escrow);
+        self.save_escrow(&escrow_id, escrow);
         VecrowEvent::MilestoneSubmitted {
             escrow_id,
             milestone,
@@ -51,18 +51,18 @@ impl VecrowEscrow {
         deadline_ms: u64,
         signature: String,
     ) {
-        let (id, mut escrow) = self.load_escrow(&escrow_id);
+        let mut escrow = self.load_escrow(&escrow_id);
         self.accept_milestone_action(
-            id,
+            &escrow_id,
             &escrow,
-            MilestoneAction::Approve,
+            Action::Approve,
             milestone,
             &nonce,
             deadline_ms,
             &signature,
         );
-        self.release_milestone(id, &mut escrow, milestone, ReleaseTrigger::Approval);
-        self.save_escrow(id, escrow);
+        self.release_milestone(&escrow_id, &mut escrow, milestone, ReleaseTrigger::Approval);
+        self.save_escrow(&escrow_id, escrow);
     }
 
     /// Sends a `Submitted` milestone back for revision with a payload signed
@@ -78,7 +78,7 @@ impl VecrowEscrow {
         deadline_ms: u64,
         signature: String,
     ) {
-        let (id, mut escrow) = self.load_escrow(&escrow_id);
+        let mut escrow = self.load_escrow(&escrow_id);
         let revisions = escrow
             .milestones
             .get(milestone as usize)
@@ -89,9 +89,9 @@ impl VecrowEscrow {
             "revision limit reached: a milestone can be sent back at most 2 times"
         );
         self.accept_milestone_action(
-            id,
+            &escrow_id,
             &escrow,
-            MilestoneAction::RequestRevision,
+            Action::RequestRevision,
             milestone,
             &nonce,
             deadline_ms,
@@ -102,7 +102,7 @@ impl VecrowEscrow {
         m.revision_count += 1;
         m.submitted_at_ms = None;
         let revision_count = m.revision_count;
-        self.save_escrow(id, escrow);
+        self.save_escrow(&escrow_id, escrow);
         VecrowEvent::RevisionRequested {
             escrow_id,
             milestone,
@@ -117,7 +117,7 @@ impl VecrowEscrow {
     /// `RevisionRequested`, since a revision request stops the timer. Pays out
     /// like an approval; attach 300 TGas.
     pub fn auto_release(&mut self, escrow_id: String, milestone: u32) {
-        let (id, mut escrow) = self.load_escrow(&escrow_id);
+        let mut escrow = self.load_escrow(&escrow_id);
         require_funded(&escrow);
         let window_ms = escrow.review_window_sec.saturating_mul(1_000);
         let m = escrow
@@ -138,8 +138,13 @@ impl VecrowEscrow {
             env::block_timestamp_ms() >= submitted_at_ms.saturating_add(window_ms),
             "review window has not ended"
         );
-        self.release_milestone(id, &mut escrow, milestone, ReleaseTrigger::AutoRelease);
-        self.save_escrow(id, escrow);
+        self.release_milestone(
+            &escrow_id,
+            &mut escrow,
+            milestone,
+            ReleaseTrigger::AutoRelease,
+        );
+        self.save_escrow(&escrow_id, escrow);
     }
 }
 
@@ -149,9 +154,9 @@ impl VecrowEscrow {
     #[allow(clippy::too_many_arguments)]
     fn accept_milestone_action(
         &mut self,
-        id: u64,
+        escrow_id: &str,
         escrow: &Escrow,
-        action: MilestoneAction,
+        action: Action,
         milestone: u32,
         nonce: &str,
         deadline_ms: u64,
@@ -167,20 +172,16 @@ impl VecrowEscrow {
             status == MilestoneStatus::Submitted,
             "only a Submitted milestone can be approved or sent back for revision"
         );
-        let approver = escrow
-            .approver
-            .as_ref()
-            .unwrap_or_else(|| env::panic_str("escrow has no approver"));
         let nonce = parse_nonce(nonce).unwrap_or_else(|err| env::panic_str(err));
-        let message = milestone_message(
+        let message = action_message(
             action,
             &env::current_account_id(),
-            id,
-            milestone,
+            escrow_id,
+            Some(milestone),
             &nonce,
             deadline_ms,
         );
-        self.accept_signed_action(approver, &message, &nonce, deadline_ms, signature);
+        self.accept_signed_action(&escrow.approver, &message, &nonce, deadline_ms, signature);
     }
 }
 

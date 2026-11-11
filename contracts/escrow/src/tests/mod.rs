@@ -4,7 +4,6 @@
 
 mod approve;
 mod auto_release;
-mod bind;
 mod create;
 mod funding;
 mod payout;
@@ -63,7 +62,20 @@ pub fn set_context(predecessor: &str, now_ms: u64) {
     );
 }
 
+/// Deploys a fresh contract: empty storage, then `new` with the production
+/// fee and review window.
 pub fn new_contract() -> VecrowEscrow {
+    near_sdk::env::set_blockchain_interface(near_sdk::MockedBlockchain::new(
+        VMContextBuilder::new()
+            .current_account_id(account(CONTRACT))
+            .build(),
+        near_sdk::test_vm_config(),
+        near_sdk::RuntimeFeesConfig::test(),
+        vec![],
+        Default::default(),
+        Default::default(),
+        None,
+    ));
     set_context(CONTRACT, T0_MS);
     VecrowEscrow::new(account(USDC), account(TREASURY), FEE_BPS, WINDOW_SEC)
 }
@@ -81,10 +93,101 @@ pub fn split_70_30() -> Vec<SplitShare> {
     vec![share(FREELANCER, 7_000), share(MEMBER, 3_000)]
 }
 
-/// Creates an escrow as the freelancer with 1,000 and 500 USDC milestones.
+/// The freelancer's NEAR wallet, which signs the terms with NEP-413.
+pub fn freelancer_wallet() -> NearWallet {
+    NearWallet::new(FREELANCER, 5)
+}
+
+/// The first unused escrow ID of the form `e{n}`.
+pub fn next_escrow_id(contract: &VecrowEscrow) -> String {
+    (1..)
+        .map(|n| format!("e{n}"))
+        .find(|id| !contract.escrows.contains_key(id))
+        .unwrap()
+}
+
+/// The default terms: 1,000 and 500 USDC milestones, the 70/30 split,
+/// `wallet` as approver, `REFUND` as refund account, the production fee and
+/// a deadline one hour after `T0_MS`.
+pub fn default_terms(escrow_id: &str, wallet: &Wallet) -> EscrowTerms {
+    EscrowTerms {
+        escrow_id: escrow_id.to_string(),
+        freelancer: account(FREELANCER),
+        milestones: vec![U128(usdc(1_000)), U128(usdc(500))],
+        split: split_70_30(),
+        approver: wallet.approver(),
+        refund_account: account(REFUND),
+        fee_bps: FEE_BPS,
+        deadline_ms: DEADLINE_MS,
+    }
+}
+
+/// Arguments of `create_escrow`.
+pub struct SignedTerms {
+    pub terms: EscrowTerms,
+    pub freelancer_signature: FreelancerSignature,
+    pub client_signature: String,
+}
+
+/// The signed message of `terms`, built by the wallet fixtures (independently
+/// of the contract), with `approver` as the `{scheme}:{address}` label.
+pub fn terms_message(terms: &EscrowTerms, approver: &str) -> String {
+    wallet_fixtures::terms_message(&wallet_fixtures::Terms {
+        contract_id: CONTRACT.to_string(),
+        escrow_id: terms.escrow_id.clone(),
+        freelancer: terms.freelancer.to_string(),
+        milestones: terms.milestones.iter().map(|m| m.0).collect(),
+        split: terms
+            .split
+            .iter()
+            .map(|s| (s.account_id.to_string(), s.bps))
+            .collect(),
+        approver: approver.to_string(),
+        refund_account: terms.refund_account.to_string(),
+        fee_bps: terms.fee_bps,
+        deadline_ms: terms.deadline_ms,
+    })
+}
+
+/// Both parties sign `terms`: the freelancer's NEAR wallet with NEP-413 and
+/// the client's approver `wallet` in its own scheme.
+pub fn sign_terms(terms: EscrowTerms, freelancer: &NearWallet, client: &Wallet) -> SignedTerms {
+    let message = terms_message(&terms, &client.label());
+    let nonce = wallet_fixtures::terms_nonce(&message);
+    SignedTerms {
+        freelancer_signature: FreelancerSignature {
+            public_key: freelancer.public_key(),
+            signature: freelancer.sign_message(&message, &nonce, CONTRACT),
+        },
+        client_signature: client.sign(&message, &nonce),
+        terms,
+    }
+}
+
+/// The relayer calls `create_escrow` at `T0_MS`.
+pub fn create_with(contract: &mut VecrowEscrow, signed: SignedTerms) {
+    set_context(RELAYER, T0_MS);
+    contract.create_escrow(
+        signed.terms,
+        signed.freelancer_signature,
+        signed.client_signature,
+    );
+}
+
+/// Puts the default terms on-chain with `wallet` as the approver; returns
+/// the escrow ID.
+pub fn create_escrow_with(contract: &mut VecrowEscrow, wallet: &Wallet) -> String {
+    let id = next_escrow_id(contract);
+    create_with(
+        contract,
+        sign_terms(default_terms(&id, wallet), &freelancer_wallet(), wallet),
+    );
+    id
+}
+
+/// Puts the default terms on-chain with a NEAR wallet as the approver.
 pub fn create_default(contract: &mut VecrowEscrow) -> String {
-    set_context(FREELANCER, T0_MS);
-    contract.create_escrow(vec![U128(usdc(1_000)), U128(usdc(500))], split_70_30())
+    create_escrow_with(contract, &Wallet::near())
 }
 
 pub fn view(contract: &VecrowEscrow, escrow_id: &str) -> EscrowView {
@@ -117,7 +220,7 @@ impl Wallet {
         [Self::near(), Self::evm(), Self::solana()]
     }
 
-    /// The `approver` argument of `bind_approver`.
+    /// The `approver` field of the terms.
     pub fn approver(&self) -> Approver {
         match self {
             Self::Near(w) => Approver::Nep413 {
@@ -133,7 +236,7 @@ impl Wallet {
         }
     }
 
-    /// `{scheme}:{address}` as written in the bind message.
+    /// `{scheme}:{address}` as written on the `Approver:` line of the terms.
     pub fn label(&self) -> String {
         match self {
             Self::Near(w) => w.approver_label(),
@@ -156,55 +259,6 @@ impl Wallet {
 /// A deadline one hour after `T0_MS`.
 pub const DEADLINE_MS: u64 = T0_MS + 3_600_000;
 
-/// Arguments of a signed `bind_approver` call.
-pub struct BindArgs {
-    pub escrow_id: String,
-    pub approver: Approver,
-    pub refund_account: AccountId,
-    pub nonce: String,
-    pub deadline_ms: u64,
-    pub signature: String,
-}
-
-/// Signs a bind payload with `wallet` for `refund_account`.
-pub fn sign_bind(wallet: &Wallet, escrow_id: &str, refund: &str, nonce: u8) -> BindArgs {
-    let nonce = wallet_fixtures::nonce(nonce);
-    let message = wallet_fixtures::bind_message(
-        CONTRACT,
-        escrow_id,
-        &wallet.label(),
-        refund,
-        &nonce,
-        DEADLINE_MS,
-    );
-    BindArgs {
-        escrow_id: escrow_id.to_string(),
-        approver: wallet.approver(),
-        refund_account: account(refund),
-        nonce: wallet_fixtures::nonce_hex(&nonce),
-        deadline_ms: DEADLINE_MS,
-        signature: wallet.sign(&message, &nonce),
-    }
-}
-
-/// Calls `bind_approver` as the relayer at `T0_MS`.
-pub fn bind_with(contract: &mut VecrowEscrow, args: BindArgs) {
-    set_context(RELAYER, T0_MS);
-    contract.bind_approver(
-        args.escrow_id,
-        args.approver,
-        args.refund_account,
-        args.nonce,
-        args.deadline_ms,
-        args.signature,
-    );
-}
-
-/// Binds `wallet` as the approver with `REFUND` as the refund account.
-pub fn bind(contract: &mut VecrowEscrow, escrow_id: &str, wallet: &Wallet, nonce: u8) {
-    bind_with(contract, sign_bind(wallet, escrow_id, REFUND, nonce));
-}
-
 /// The token contract calls `ft_on_transfer` for `sender` and `amount`;
 /// returns the amount the token gives back to the sender.
 pub fn transfer_call_from(
@@ -226,11 +280,10 @@ pub fn fund(contract: &mut VecrowEscrow, escrow_id: &str, amount: u128) -> u128 
     transfer_call_from(contract, USDC, CLIENT, amount, escrow_id)
 }
 
-/// Creates the default escrow (1,000 + 500 USDC, 70/30), binds `wallet` and
-/// funds it with exactly the total.
+/// Puts the default terms on-chain with `wallet` as the approver and funds
+/// the escrow with exactly the total.
 pub fn funded_escrow(contract: &mut VecrowEscrow, wallet: &Wallet) -> String {
-    let id = create_default(contract);
-    bind(contract, &id, wallet, 200);
+    let id = create_escrow_with(contract, wallet);
     assert_eq!(fund(contract, &id, usdc(1_500)), 0);
     id
 }

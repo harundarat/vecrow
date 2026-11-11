@@ -47,7 +47,7 @@ impl VecrowEscrow {
     pub fn on_payout(&mut self, escrow_id: String, account_id: AccountId, amount: U128) -> bool {
         let paid = is_promise_success();
         if !paid {
-            let (id, mut escrow) = self.load_escrow(&escrow_id);
+            let mut escrow = self.load_escrow(&escrow_id);
             match escrow
                 .pending_payouts
                 .iter_mut()
@@ -59,7 +59,7 @@ impl VecrowEscrow {
                     amount,
                 }),
             }
-            self.save_escrow(id, escrow);
+            self.save_escrow(&escrow_id, escrow);
         }
         VecrowEvent::Payout {
             escrow_id,
@@ -78,7 +78,7 @@ impl VecrowEscrow {
     /// if it fails again, so two calls in a row can never pay twice. Returns
     /// whether the transfer succeeded.
     pub fn retry_payout(&mut self, escrow_id: String, account_id: AccountId) -> Promise {
-        let (id, mut escrow) = self.load_escrow(&escrow_id);
+        let mut escrow = self.load_escrow(&escrow_id);
         let index = escrow
             .pending_payouts
             .iter()
@@ -86,15 +86,15 @@ impl VecrowEscrow {
             .unwrap_or_else(|| env::panic_str("no pending payout for this account"));
         let pending = escrow.pending_payouts.remove(index);
         require_payout_gas(1);
-        self.save_escrow(id, escrow);
-        self.payout(id, &account_id, pending.amount.0)
+        self.save_escrow(&escrow_id, escrow);
+        self.payout(&escrow_id, &account_id, pending.amount.0)
     }
 }
 
 impl VecrowEscrow {
     /// Sends `amount` USDC to `account_id`. The 1 yoctoNEAR that
     /// `ft_transfer` requires comes from the contract's balance.
-    pub(crate) fn payout(&self, escrow_id: u64, account_id: &AccountId, amount: u128) -> Promise {
+    pub(crate) fn payout(&self, escrow_id: &str, account_id: &AccountId, amount: u128) -> Promise {
         ext_ft::ext(self.config.usdc_contract_id.clone())
             .with_attached_deposit(NearToken::from_yoctonear(1))
             .with_static_gas(GAS_FT_TRANSFER)
@@ -116,7 +116,7 @@ impl VecrowEscrow {
     /// since NEP-141 rejects them.
     pub(crate) fn release_milestone(
         &mut self,
-        id: u64,
+        escrow_id: &str,
         escrow: &mut Escrow,
         index: u32,
         trigger: ReleaseTrigger,
@@ -142,7 +142,7 @@ impl VecrowEscrow {
         require_payout_gas(payouts.len());
 
         VecrowEvent::MilestoneReleased {
-            escrow_id: id.to_string(),
+            escrow_id: escrow_id.to_string(),
             milestone: index,
             amount: U128(amount),
             fee: U128(plan.fee),
@@ -150,9 +150,9 @@ impl VecrowEscrow {
         }
         .emit();
         for (account_id, amount) in &payouts {
-            self.payout(id, account_id, *amount).detach();
+            self.payout(escrow_id, account_id, *amount).detach();
         }
-        complete_if_done(id, escrow);
+        complete_if_done(escrow_id, escrow);
     }
 }
 
@@ -170,7 +170,7 @@ pub(crate) fn require_payout_gas(count: usize) {
 
 /// Marks the escrow `Completed` once every milestone is `Released` or
 /// `Refunded`.
-pub(crate) fn complete_if_done(id: u64, escrow: &mut Escrow) {
+pub(crate) fn complete_if_done(escrow_id: &str, escrow: &mut Escrow) {
     let done = escrow.milestones.iter().all(|m| {
         matches!(
             m.status,
@@ -180,7 +180,7 @@ pub(crate) fn complete_if_done(id: u64, escrow: &mut Escrow) {
     if done && escrow.status == EscrowStatus::Funded {
         escrow.status = EscrowStatus::Completed;
         VecrowEvent::EscrowCompleted {
-            escrow_id: id.to_string(),
+            escrow_id: escrow_id.to_string(),
         }
         .emit();
     }
