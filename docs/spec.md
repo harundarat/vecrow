@@ -97,13 +97,13 @@ after the link is shared (the creator cancels and creates a new escrow instead).
 
 | ID | Requirement | Layer | Status | Code | Tests |
 | --- | --- | --- | --- | --- | --- |
-| R-01 | Create on-chain and cancel escrow | Contract | Planned | | |
-| R-02 | Funding and amount rules | Contract | Planned | | |
-| R-03 | Revenue split | Contract | Planned | | |
-| R-04 | Approver and refund account | Contract | Planned | | |
-| R-05 | Submit milestone | Contract | Planned | | |
-| R-06 | Signed approval (NEAR, EVM, Solana) | Contract | Planned | | |
-| R-07 | Auto-release after 14 days | Contract + job | Planned | | |
+| R-01 | Create on-chain and cancel escrow | Contract | Implemented | [create.rs](../contracts/escrow/src/create.rs), [signature.rs](../contracts/escrow/src/signature.rs) | [tests/create.rs](../contracts/escrow/src/tests/create.rs), [tests/cancel.rs](../contracts/escrow/src/tests/cancel.rs), [tests/funding.rs](../contracts/escrow/src/tests/funding.rs), [sandbox/create_cancel.rs](../contracts/integration-tests/tests/create_cancel.rs), [sandbox/funding.rs](../contracts/integration-tests/tests/funding.rs) |
+| R-02 | Funding and amount rules | Contract | Implemented | [funding.rs](../contracts/escrow/src/funding.rs) | [tests/funding.rs](../contracts/escrow/src/tests/funding.rs), [sandbox/funding.rs](../contracts/integration-tests/tests/funding.rs), [sandbox/refund.rs](../contracts/integration-tests/tests/refund.rs) |
+| R-03 | Revenue split | Contract | Partial | [split.rs](../contracts/escrow/src/split.rs), [payout.rs](../contracts/escrow/src/payout.rs) | [tests/split.rs](../contracts/escrow/src/tests/split.rs), [tests/create.rs](../contracts/escrow/src/tests/create.rs), [sandbox/approve.rs](../contracts/integration-tests/tests/approve.rs) |
+| R-04 | Approver and refund account | Contract | Implemented | [create.rs](../contracts/escrow/src/create.rs), [signature.rs](../contracts/escrow/src/signature.rs) | [tests/create.rs](../contracts/escrow/src/tests/create.rs), [tests/signature.rs](../contracts/escrow/src/tests/signature.rs), [sandbox/create_cancel.rs](../contracts/integration-tests/tests/create_cancel.rs) |
+| R-05 | Submit milestone | Contract | Implemented | [milestones.rs](../contracts/escrow/src/milestones.rs) | [tests/submit.rs](../contracts/escrow/src/tests/submit.rs), [tests/revision.rs](../contracts/escrow/src/tests/revision.rs), [sandbox/zero_balance.rs](../contracts/integration-tests/tests/zero_balance.rs) |
+| R-06 | Signed approval (NEAR, EVM, Solana) | Contract | Partial | [milestones.rs](../contracts/escrow/src/milestones.rs), [signature.rs](../contracts/escrow/src/signature.rs) | [tests/approve.rs](../contracts/escrow/src/tests/approve.rs), [tests/signature.rs](../contracts/escrow/src/tests/signature.rs), [sandbox/approve.rs](../contracts/integration-tests/tests/approve.rs) |
+| R-07 | Auto-release after 14 days | Contract + job | Partial | [milestones.rs](../contracts/escrow/src/milestones.rs) | [tests/auto_release.rs](../contracts/escrow/src/tests/auto_release.rs), [sandbox/auto_release.rs](../contracts/integration-tests/tests/auto_release.rs) |
 | R-08 | Cross-chain funding via 1Click | Backend | Planned | | |
 | R-09 | Gasless meta transaction relayer | Backend | Planned | | |
 | R-10 | Client escrow page | Frontend | Planned | | |
@@ -113,10 +113,10 @@ after the link is shared (the creator cancels and creates a new escrow instead).
 | R-14 | Profile, multiple wallets, email | Backend + frontend | Partial | [account.go](../backend/internal/usecase/auth/account.go) | [account_test.go](../backend/internal/usecase/auth/account_test.go), [account_repository_integration_test.go](../backend/internal/repository/account_repository_integration_test.go) |
 | R-15 | Invite the other party | Backend | Planned | | |
 | R-16 | "My escrows" page | Backend + frontend | Planned | | |
-| R-17 | Request milestone revision | Contract | Planned | | |
-| R-18 | Refund by freelancer | Contract | Planned | | |
-| R-19 | 0.5% platform fee | Contract | Planned | | |
-| R-20 | Storage registration and payout retry | Contract + backend | Planned | | |
+| R-17 | Request milestone revision | Contract | Implemented | [milestones.rs](../contracts/escrow/src/milestones.rs) | [tests/revision.rs](../contracts/escrow/src/tests/revision.rs), [tests/auto_release.rs](../contracts/escrow/src/tests/auto_release.rs), [sandbox/revision.rs](../contracts/integration-tests/tests/revision.rs), [sandbox/auto_release.rs](../contracts/integration-tests/tests/auto_release.rs) |
+| R-18 | Refund by freelancer | Contract | Partial | [refund.rs](../contracts/escrow/src/refund.rs) | [tests/refund.rs](../contracts/escrow/src/tests/refund.rs), [sandbox/refund.rs](../contracts/integration-tests/tests/refund.rs), [sandbox/retry.rs](../contracts/integration-tests/tests/retry.rs) |
+| R-19 | 0.5% platform fee | Contract | Implemented | [split.rs](../contracts/escrow/src/split.rs), [payout.rs](../contracts/escrow/src/payout.rs), [create.rs](../contracts/escrow/src/create.rs) | [tests/split.rs](../contracts/escrow/src/tests/split.rs), [tests/approve.rs](../contracts/escrow/src/tests/approve.rs), [tests/create.rs](../contracts/escrow/src/tests/create.rs), [sandbox/approve.rs](../contracts/integration-tests/tests/approve.rs), [sandbox/refund.rs](../contracts/integration-tests/tests/refund.rs), [sandbox/create_cancel.rs](../contracts/integration-tests/tests/create_cancel.rs) |
+| R-20 | Storage registration and payout retry | Contract + backend | Partial | [payout.rs](../contracts/escrow/src/payout.rs) | [tests/payout.rs](../contracts/escrow/src/tests/payout.rs), [tests/retry.rs](../contracts/escrow/src/tests/retry.rs), [sandbox/approve.rs](../contracts/integration-tests/tests/approve.rs), [sandbox/retry.rs](../contracts/integration-tests/tests/retry.rs), [sandbox/zero_balance.rs](../contracts/integration-tests/tests/zero_balance.rs) |
 | R-21 | Join without an account (guest token) | Backend + frontend | Planned | | |
 | R-22 | Account recovery via email OTP | Backend + frontend | Planned | | |
 | R-23 | Escrow proposal and creator approval | Backend + frontend | Planned | | |
@@ -139,23 +139,27 @@ the caller.
 relayer) or by the approver (a signed payload with a nonce and a deadline, forwarded
 by the relayer).
 
-- [ ] near-workspaces unit tests pass for `create_escrow` and `cancel`.
-- [ ] `create_escrow` with a missing or invalid signature from either party is rejected.
-- [ ] `create_escrow` with terms that differ from what either party signed is rejected.
-- [ ] `create_escrow` after the deadline, or with an escrow ID that already exists, is rejected.
-- [ ] `cancel` by anyone other than the freelancer or the approver is rejected.
-- [ ] `cancel` on a `Funded` escrow is rejected.
+- [x] near-workspaces unit tests pass for `create_escrow` and `cancel`.
+- [x] `create_escrow` with a missing or invalid signature from either party is rejected.
+- [x] `create_escrow` with terms that differ from what either party signed is rejected.
+- [x] `create_escrow` after the deadline, or with an escrow ID that already exists, is rejected.
+- [x] `cancel` by anyone other than the freelancer or the approver is rejected.
+- [x] `cancel` on a `Funded` escrow is rejected.
+
+The terms message, the signature formats and the escrow ID format are in
+architecture.md §5.1 and §5.3. The escrow ID is chosen by the backend, and a cancelled
+escrow's ID cannot be used again.
 
 #### R-02 — Funding and amount rules
 
 Funds arrive through `ft_on_transfer` from the USDC contract with `msg = escrow_id`.
 Refunds of incoming transfers follow NEP-141, so they return to `sender_id`.
 
-- [ ] Transfer of exactly the total to a `Created` escrow → escrow becomes `Funded` with a balance equal to the total.
-- [ ] Transfer below the total → returned in full; status unchanged.
-- [ ] Transfer above the total → escrow is `Funded` with exactly the total; the excess (`amount - total`) is returned.
-- [ ] Transfer to an escrow that is `Funded`, `Completed`, or `Cancelled` → returned in full.
-- [ ] Transfer of any other token, or with an unknown `escrow_id` (including an escrow that is not on-chain yet) → rejected and returned.
+- [x] Transfer of exactly the total to a `Created` escrow → escrow becomes `Funded` with a balance equal to the total.
+- [x] Transfer below the total → returned in full; status unchanged.
+- [x] Transfer above the total → escrow is `Funded` with exactly the total; the excess (`amount - total`) is returned.
+- [x] Transfer to an escrow that is `Funded`, `Completed`, or `Cancelled` → returned in full.
+- [x] Transfer of any other token, or with an unknown `escrow_id` (including an escrow that is not on-chain yet) → rejected and returned.
 
 #### R-03 — Revenue split
 
@@ -166,7 +170,11 @@ registered on the USDC contract by the backend before the escrow goes on-chain (
 Any rounding remainder goes to the first recipient.
 
 - [ ] A split that does not total 10,000 bps is rejected, by the backend and by `create_escrow`.
-- [ ] With 2 and 3 recipients, each receives the correct share.
+- [x] With 2 and 3 recipients, each receives the correct share.
+
+*Partial:* `create_escrow` rejects such a split, as well as more than 10 recipients,
+duplicates, zero shares and the contract as a recipient; the backend check is part of
+R-23, which is not built yet.
 
 #### R-04 — Approver and refund account
 
@@ -176,18 +184,22 @@ through a link (R-23). Both are part of the terms the client signs with the appr
 wallet, so the signature also proves that the client controls that wallet. They are
 fixed by `create_escrow`; no contract method changes them.
 
-- [ ] An approver equal to the freelancer or a split recipient is rejected.
-- [ ] `refund_account` is required and may not equal the freelancer or a split recipient.
-- [ ] Terms whose client signature does not come from the approver wallet are rejected.
-- [ ] No method changes the approver or `refund_account` after `create_escrow`.
+- [x] An approver equal to the freelancer or a split recipient is rejected.
+- [x] `refund_account` is required and may not equal the freelancer or a split recipient.
+- [x] Terms whose client signature does not come from the approver wallet are rejected.
+- [x] No method changes the approver or `refund_account` after `create_escrow`.
+
+The approver is also compared with the implicit and eth-implicit forms of the freelancer
+and recipient accounts and with the freelancer's signing key (D-18). A NEAR approver is
+bound with the public key it signs with (D-16).
 
 #### R-05 — Submit milestone
 
 The freelancer submits a milestone, which starts its review window.
 
-- [ ] Only the freelancer can submit.
-- [ ] Only milestones in `Pending` or `RevisionRequested` on a `Funded` escrow can be submitted.
-- [ ] Re-submitting starts a new review window.
+- [x] Only the freelancer can submit.
+- [x] Only milestones in `Pending` or `RevisionRequested` on a `Funded` escrow can be submitted.
+- [x] Re-submitting starts a new review window.
 
 #### R-06 — Signed approval
 
@@ -196,18 +208,26 @@ containing a nonce and a deadline. Supported schemes: NEAR (NEP-413), EVM (EIP-1
 with `ecrecover`), and Solana (ed25519).
 
 - [ ] Approval succeeds when signed from a NEAR wallet, MetaMask, and Phantom.
-- [ ] A reused nonce is rejected.
-- [ ] An expired payload is rejected.
+- [x] A reused nonce is rejected.
+- [x] An expired payload is rejected.
+
+*Partial:* the contract verifies all three schemes (architecture.md §5.3), and the unit
+and sandbox tests approve with signatures generated by ed25519-dalek, k256 and borsh in the
+exact byte formats of NEAR `signMessage` (NEP-413), MetaMask `personal_sign` and Phantom
+`signMessage` (D-20). Fixtures captured from the real wallets are not added yet.
 
 #### R-07 — Auto-release
 
 Anyone may call `auto_release` once 14 days have passed since the latest
 submission. A backend job calls it automatically.
 
-- [ ] Rejected before the window ends.
-- [ ] The window is measured from the latest submission.
-- [ ] Rejected for milestones in `RevisionRequested`.
-- [ ] The window is configurable at deploy time (shortened for the demo).
+- [x] Rejected before the window ends.
+- [x] The window is measured from the latest submission.
+- [x] Rejected for milestones in `RevisionRequested`.
+- [x] The window is configurable at deploy time (shortened for the demo).
+
+*Partial:* `auto_release` is done in the contract; the backend job that calls it is not
+built yet. The window is copied into each escrow by `create_escrow` (D-15).
 
 #### R-17 — Request milestone revision
 
@@ -217,10 +237,10 @@ becomes `RevisionRequested` and the auto-release timer stops. The contract store
 `revision_count` per milestone, max 2. The reason text is stored in the backend,
 not on-chain.
 
-- [ ] A third revision request is rejected.
-- [ ] A revision request not signed by the approver is rejected.
-- [ ] A revision request for a `Pending` or `Released` milestone is rejected.
-- [ ] After re-submission, `auto_release` is only callable 14 days later.
+- [x] A third revision request is rejected.
+- [x] A revision request not signed by the approver is rejected.
+- [x] A revision request for a `Pending` or `Released` milestone is rejected.
+- [x] After re-submission, `auto_release` is only callable 14 days later.
 
 #### R-18 — Refund by freelancer
 
@@ -229,10 +249,14 @@ The freelancer calls `refund_unsubmitted` (via the relayer) for one or all
 `refund_account` from R-04 and the milestone becomes `Refunded`. The client cannot
 trigger a refund.
 
-- [ ] Only the freelancer can call it.
-- [ ] Milestones in `Submitted`, `RevisionRequested`, or `Released` are rejected.
+- [x] Only the freelancer can call it.
+- [x] Milestones in `Submitted`, `RevisionRequested`, or `Released` are rejected.
 - [ ] `refund_account` is registered by the backend before the escrow goes on-chain (R-20).
-- [ ] The escrow becomes `Completed` once every milestone is `Released` or `Refunded`.
+- [x] The escrow becomes `Completed` once every milestone is `Released` or `Refunded`.
+
+*Partial:* the contract is done; registering the refund account belongs to the R-20
+backend work. Until it is registered, its refund is kept as a pending payout and is not
+lost (tested in the sandbox).
 
 #### R-19 — Platform fee 0.5%
 
@@ -244,12 +268,16 @@ split per R-03. Refunds (R-18) and returned deposits (R-02) are not charged. The
 is shown before signing the terms, on the freelancer dashboard, and on the client
 escrow page.
 
-- [ ] A 1,000 USDC milestone with a 70/30 split pays 5 to treasury, 696.5 and 298.5 to the recipients.
-- [ ] The total paid out equals the milestone amount exactly.
-- [ ] Refunds are not charged a fee.
-- [ ] Terms signed with a `fee_bps` that no longer matches the configuration are rejected by `create_escrow`.
-- [ ] Changing the fee configuration does not affect escrows that are already on-chain.
-- [ ] `treasury_account` is registered via `storage_deposit` at deploy time.
+- [x] A 1,000 USDC milestone with a 70/30 split pays 5 to treasury, 696.5 and 298.5 to the recipients.
+- [x] The total paid out equals the milestone amount exactly.
+- [x] Refunds are not charged a fee.
+- [x] Terms signed with a `fee_bps` that no longer matches the configuration are rejected by `create_escrow`.
+- [x] Changing the fee configuration does not affect escrows that are already on-chain.
+- [x] `treasury_account` is registered via `storage_deposit` at deploy time.
+
+The fee configuration has no setter; it changes only by redeploying (D-15). The deploy
+steps in the README register the escrow contract and the treasury, as the sandbox setup
+does; an unregistered treasury's fee would be kept as a pending payout.
 
 #### R-20 — Storage registration and payout retry
 
@@ -263,11 +291,17 @@ funding through 1Click need no registration. Every payout (release, fee, refund)
 and a backend job runs it automatically. The pending balance is zeroed before
 sending and restored if the transfer fails again.
 
-- [ ] A transfer to an unregistered account is recorded as pending, not lost.
-- [ ] `retry_payout` after registration sends the exact pending amount.
-- [ ] Two consecutive `retry_payout` calls do not pay twice.
+- [x] A transfer to an unregistered account is recorded as pending, not lost.
+- [x] `retry_payout` after registration sends the exact pending amount.
+- [x] Two consecutive `retry_payout` calls do not pay twice.
 - [ ] Pending payouts appear in `GET /escrows/:id` and in the CSV export.
-- [ ] Freelancer and client still need a NEAR balance of 0.
+- [x] Freelancer and client still need a NEAR balance of 0.
+
+*Partial:* the contract side is done: pending payouts are returned by `get_escrow`, and a
+sandbox test runs the whole flow with a freelancer, a team member and a client holding
+0 NEAR, both parties signing the terms with their wallets and the freelancer acting
+through NEP-366 meta transactions (D-19). The backend registration, the retry job,
+`GET /escrows/:id` and the CSV export are not built yet.
 
 ### Backend
 
@@ -548,4 +582,7 @@ endpoint; backend jobs call them directly on the contract.
 - The terms cannot be edited after the link is shared; the creator cancels and creates a new escrow.
 - If the creator does not approve before the deadline, the other party has to submit and sign again.
 - The backend can delay or refuse to create an approved escrow on-chain, but cannot change its terms.
+- The contract cannot read access keys, so a NEP-413 signature is checked against the key given with it (D-16). For a named freelancer account the backend checks the key over RPC; a compromised backend could sign the freelancer's side with its own key, though only for terms the client also signed.
+- A NEAR approver is tied to the public key in the terms; if that key is removed from the wallet, the client can no longer approve, request revisions or cancel, and milestones are released by auto-release.
+- The contract pays storage for escrows and used nonces from its own NEAR balance (D-19), so that balance has to be monitored.
 - A lost wallet cannot recover contract rights (submit, approve, payouts). Email recovery (R-22) restores the account only.

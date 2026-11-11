@@ -81,18 +81,27 @@ their NEAR account and split, and approve it as the client.
 ## Contract
 
 - Account: `TODO: <escrow>.near` (mainnet) · `TODO: <escrow>.testnet` (testnet)
+- Code: [`contracts/escrow/`](./contracts/escrow/) (Rust, near-sdk 5.30), built with cargo-near
 - Methods: `create_escrow`, `cancel`, `ft_on_transfer`, `submit_milestone`,
   `approve_milestone`, `request_revision`, `auto_release`, `refund_unsubmitted`,
-  `retry_payout`, `get_escrow`
+  `on_payout` (callback), `retry_payout`, `get_escrow`, plus the `new` initializer
 - Escrow statuses: `Created`, `Funded`, `Completed`, `Cancelled` (before an escrow is
   on-chain, the backend also uses `Open`, `PendingApproval`, and `Approved`)
 - Milestone statuses: `Pending`, `Submitted`, `RevisionRequested`, `Released`, `Refunded`
+- No method takes an attached deposit: the contract pays storage and the 1 yoctoNEAR of
+  each `ft_transfer` from its own balance.
+- Arguments, the signed terms and actions (byte by byte), the escrow ID format, the
+  storage layout and the events are in
+  [architecture.md §5](docs/architecture.md#5-escrow-contract).
 
 ## Run locally
 
 ### Prerequisites
 
-- Rust + `cargo-near` (contracts)
+- [rustup](https://rustup.rs) (contracts; Rust 1.97.0 with the wasm32 target is installed
+  from `contracts/rust-toolchain.toml` on first use) and cargo-near 0.23:
+  `cargo install cargo-near --version 0.23.0 --locked --no-default-features`
+  (without default features it skips Ledger support, which needs libudev)
 - Go 1.27+ (backend), with [goose](https://github.com/pressly/goose) for migrations and
   [sqlc](https://sqlc.dev) for query code generation
 - Node.js (frontend)
@@ -110,8 +119,40 @@ Every variable is listed there; no secrets are committed.
 
 ```sh
 cd contracts
-# TODO: build, test, and deploy commands
+make fmt-check   # rustfmt
+make lint        # clippy -D warnings, for the host and the wasm32 target
+make build       # cargo-near: target/near/escrow/vecrow_escrow.wasm and target/near/mock-ft/mock_ft.wasm
+make test        # unit tests, then build + near-workspaces sandbox tests
 ```
+
+`make test-unit` runs only the unit tests (no sandbox, no wasm build); `make test-sandbox`
+builds the wasm files and runs the sandbox tests in `integration-tests/`. The first sandbox
+run downloads the nearcore sandbox binary (about 95 MB unpacked, from
+`s3-us-west-1.amazonaws.com`). `make help` lists every target.
+
+| Crate | Contents |
+| --- | --- |
+| `escrow` | The escrow contract; unit tests in `src/tests/` |
+| `mock-ft` | Mock NEP-141 token used as USDC in tests (open `mint`, NEP-145 registration) |
+| `wallet-fixtures` | Test signers reproducing NEP-413, EIP-191 and Solana `signMessage` bytes |
+| `integration-tests` | Sandbox tests: signed terms, funding, payouts, retries, unregistered accounts, meta transactions |
+
+If the sandbox fails with `couldn't set the file descriptor limit to (65535, 65535)`, the
+environment's hard open-files limit (`ulimit -Hn`) is below what nearcore requires; raise
+it to at least 65535, or point `NEAR_SANDBOX_BIN_PATH` at a sandbox binary wrapper that
+works within the limit.
+
+Deploying (testnet first, D-11) takes three steps:
+
+1. `cargo near deploy build-non-reproducible-wasm <escrow-account>`, choosing
+   `with-init-call new` with
+   `{"usdc_contract_id": "<usdc>", "treasury_account": "<treasury>", "fee_bps": 50, "review_window_sec": 1209600}`
+   (a shorter `review_window_sec` for the demo).
+2. Register the escrow account and the treasury on the USDC contract:
+   `storage_deposit({"account_id": "<account>", "registration_only": true})` with the
+   deposit from `storage_balance_bounds().min`.
+3. Keep NEAR on the escrow account for storage: about 0.003 NEAR per escrow and
+   0.0007 NEAR per signed action (D-19).
 
 ### Backend
 
@@ -159,6 +200,11 @@ are requested with `dry: true`.
   client escrow page shows the approver and warns the client.
 - The terms cannot be edited after the link is shared; the creator cancels and creates
   a new escrow.
+- The contract cannot read NEAR access keys, so it checks a NEP-413 signature against the
+  key given with it; for a named freelancer account the backend checks that key over RPC
+  (D-16).
+- A NEAR approver is tied to the key in the signed terms; if that key is removed, the
+  client can no longer approve, and milestones are released by auto-release.
 - A lost wallet cannot recover contract rights (submit, approve, payouts); email
   recovery restores the account only.
 
