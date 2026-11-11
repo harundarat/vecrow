@@ -22,6 +22,12 @@ consequences, including the trade-offs we accept.
 | [D-12](#d-12--backend-stack-and-layering) | Backend stack and layering | 2026-11-08 | Accepted | — |
 | [D-13](#d-13--wallet-login-plain-text-challenge-and-opaque-bearer-sessions) | Wallet login: plain-text challenge and opaque bearer sessions | 2026-11-09 | Accepted | R-13, R-14 |
 | [D-14](#d-14--either-party-creates-the-escrow-it-goes-on-chain-only-after-both-sign-the-same-terms) | Either party creates the escrow; it goes on-chain only after both sign the same terms | 2026-11-11 | Accepted | R-01, R-03, R-04, R-15, R-21, R-23 |
+| [D-15](#d-15--deploy-time-configuration-with-no-setter-checked-and-locked-per-escrow) | Deploy-time configuration with no setter, checked and locked per escrow | 2026-11-11 | Accepted | R-01, R-07, R-19 |
+| [D-16](#d-16--nep-413-signatures-are-checked-against-the-key-given-with-them) | NEP-413 signatures are checked against the key given with them | 2026-11-11 | Accepted | R-01, R-04, R-06, R-17 |
+| [D-17](#d-17--signed-payloads-are-plain-text-rebuilt-by-the-contract) | Signed payloads are plain text rebuilt by the contract | 2026-11-11 | Accepted | R-01, R-06, R-17, R-23 |
+| [D-18](#d-18--approver-and-refund-account-rules-cover-implicit-accounts-and-keys) | Approver and refund-account rules cover implicit accounts and keys | 2026-11-11 | Accepted | R-04 |
+| [D-19](#d-19--one-transfer-per-payout-paid-for-by-the-contract) | One transfer per payout, paid for by the contract | 2026-11-11 | Accepted | R-02, R-03, R-18, R-19, R-20 |
+| [D-20](#d-20--contract-toolchain-and-generated-wallet-fixtures) | Contract toolchain and generated wallet fixtures | 2026-11-11 | Accepted | R-06 |
 
 ---
 
@@ -343,3 +349,182 @@ have to trust the backend for who is paid and who approves.
 - The freelancer signs the terms with their NEAR wallet (NEP-413) and the client with the approver wallet, so the contract verifies two more signatures per escrow.
 - If the creator approves too late, the other party's signature expires and they must submit again.
 - As before, the contract cannot prove that the approver is not a second wallet owned by the freelancer. The creator sees the other party's addresses before approving, and the client escrow page shows the approver.
+
+## D-15 — Deploy-time configuration with no setter, checked and locked per escrow
+
+**Context.** R-19 requires that terms signed with an outdated `fee_bps` are rejected and
+that a configuration change does not affect escrows already on-chain. R-01 says
+`create_escrow` stores the review window. The contract methods are fixed by
+architecture.md §5.1, which has no administrative method, and any key that can change the
+configuration of a live contract can also change where fees go or which token is paid.
+
+**Decision.**
+- `new(usdc_contract_id, treasury_account, fee_bps, review_window_sec)` sets the
+  configuration once. There is no owner and no setter; the configuration changes only by
+  redeploying the contract code with a state migration.
+- `create_escrow` rejects terms whose `fee_bps` differs from the configuration, then
+  copies `fee_bps` and `review_window_sec` into the escrow. Releases use the escrow's
+  values, never the current configuration.
+- `new` rejects `fee_bps` above 10,000, a review window of 0, and the contract itself as
+  the treasury.
+
+**Alternatives.**
+- An owner-only setter: convenient for the demo, but it adds a privileged key to a
+  contract that holds client funds.
+- Taking `fee_bps` from the terms without checking it: both parties could sign a fee of 0.
+
+**Consequences.**
+- A shorter demo window (R-07) is a different deployment, not a call.
+- After a redeploy with a new fee, the backend must have the parties sign again any terms
+  it has not put on-chain yet.
+- The treasury and the USDC contract are global: a redeploy that changes the treasury
+  affects future releases of existing escrows; only `fee_bps` and the window are locked.
+- The unit tests simulate a redeploy by changing the stored configuration.
+
+## D-16 — NEP-413 signatures are checked against the key given with them
+
+**Context.** A NEP-413 signature is checked against an ed25519 public key, but a NEAR
+account ID is a name: a contract cannot read another account's access keys, so it cannot
+check that a key belongs to an account. Both the freelancer (always) and a client with a
+NEAR wallet sign with NEP-413.
+
+**Decision.**
+- The freelancer's signature of the terms comes with the `public_key` the wallet returns.
+  A NEAR approver is part of the terms as `{account_id, public_key}`, and every later
+  approval, revision or cancellation must be signed with that key.
+- When the account is an implicit account (64 hex characters), its ID must be the hex of
+  the key; the contract checks this for the freelancer and treats an approver's implicit
+  account as the approver (D-18).
+- For named accounts, the backend checks over RPC that the key is a full access key of the
+  account before it calls `create_escrow`, as it does for login (architecture.md §7.5).
+
+**Alternatives.**
+- Accept only implicit accounts, whose ID is the key: no label to trust, but named
+  accounts such as `alice.near` could not take part.
+- Have the freelancer call `create_escrow` through a meta transaction, which the runtime
+  verifies against the account's keys: not possible when the client creates the escrow,
+  because the freelancer signs before the client's signature exists (D-14).
+
+**Consequences.**
+- If the client deletes or rotates the bound key, they cannot approve, request revisions
+  or cancel. The freelancer is still paid by auto-release, and refunds do not need the
+  approver.
+- For a named freelancer account, a compromised backend could sign the freelancer's side
+  with a key it holds. It still needs the client's signature over the same terms, so the
+  amounts, split, approver and refund account are what the client signed, and the named
+  freelancer only gains rights by acting from their own account. The contract cannot
+  close this gap; it is listed as a limitation.
+
+## D-17 — Signed payloads are plain text rebuilt by the contract
+
+**Context.** Three wallet families sign differently (D-02). A signature must not be
+replayable on another deployment, escrow, milestone or action, wallets should show the
+signer what they sign, and the backend chooses the escrow ID before the escrow is
+on-chain (D-14).
+
+**Decision.**
+- The contract builds each message from the call arguments: a first line
+  `Vecrow {method}`, then one `Key: value` line per field, separated by `\n`
+  (architecture.md §5.3). Both parties sign the same terms text; NEP-413 uses the
+  contract account as `recipient`.
+- Terms carry no nonce: the escrow ID can be used only once and the terms expire at their
+  deadline. Their NEP-413 nonce is `sha256(message)`.
+- Actions carry a nonce of 32 random bytes, written as 64 lowercase hex characters, that
+  each approver can use once across all escrows and actions; the contract stores
+  `sha256(borsh(approver key) ‖ nonce)`.
+- Deadlines are milliseconds since the Unix epoch, valid while the block time is at most
+  the deadline. Milestones are 0-based indexes. Escrow IDs are 1 to 64 characters of
+  `a-z`, `0-9`, `-` and `_`, chosen by the backend.
+- EIP-191 signatures with a high `s` value are rejected (EIP-2); `v` may be 27/28 or 0/1.
+
+**Alternatives.**
+- A JSON payload: needs a canonical serialization on every client to sign the same bytes.
+- EIP-712 typed data: only for EVM wallets.
+- A per-approver counter instead of random nonces: less storage, but two signed actions
+  made in parallel could only be submitted in order.
+- Escrow IDs assigned by the contract: the terms could not name the escrow before it is
+  on-chain.
+
+**Consequences.**
+- The backend and the frontend have to produce the messages byte for byte; the format is
+  specified in architecture.md and reproduced by `contracts/wallet-fixtures`.
+- Wallets show readable text, including the contract account and the action.
+- Each used nonce costs 73 bytes of contract storage.
+
+## D-18 — Approver and refund-account rules cover implicit accounts and keys
+
+**Context.** R-04 rejects an approver or refund account equal to the freelancer or a
+split recipient. On NEAR, the same key or address can also appear as an implicit account
+(64 hex characters of an ed25519 key) or an eth-implicit account (`0x` + 40 hex of an EVM
+address), and a NEAR and a Solana wallet can hold the same ed25519 key.
+
+**Decision.** `create_escrow` rejects:
+- an approver whose NEAR account, the implicit account of its ed25519 key, or the
+  eth-implicit account of its EVM address is the freelancer or a split recipient;
+- an approver holding the ed25519 key the freelancer signed the terms with;
+- a refund account that is the freelancer, a split recipient, or the contract;
+- an implicit freelancer account that signs with another key.
+
+The refund account may be the client's own NEAR approver account. No method changes the
+approver or the refund account after `create_escrow`.
+
+**Consequences.**
+- The checks are stricter than comparing strings, but they still cannot detect a second
+  wallet of the freelancer (D-14).
+
+## D-19 — One transfer per payout, paid for by the contract
+
+**Context.** NEP-141 `ft_transfer` requires exactly 1 yoctoNEAR, a positive amount and a
+registered receiver. Users hold no NEAR (goal 5), and one unregistered recipient must not
+block the others (R-20).
+
+**Decision.**
+- Each payout is its own `ft_transfer` with its own `on_payout` callback: the fee, every
+  split share, and a refund (the sum of the refunded milestones, in one transfer). Zero
+  amounts are skipped.
+- A failed transfer adds its amount to the escrow's `pending_payouts` for that account.
+  `retry_payout` removes the amount before sending and `on_payout` restores it only on
+  failure (D-07).
+- Storage and the 1 yoctoNEAR per transfer are paid from the contract's NEAR balance. No
+  method is payable.
+- Rejected or excess deposits are returned through the `ft_on_transfer` return value
+  rather than a panic, with the reason logged.
+- An escrow has at most 20 milestones and 10 split recipients, so a release (up to 11
+  transfers, 20 TGas reserved for each transfer and its callback) fits in one 300 TGas
+  call.
+
+**Alternatives.**
+- All transfers of a release in one batch receipt: fewer receipts, but one unregistered
+  account would fail the whole batch.
+- Recipients claim their own funds: they would need NEAR to send the claim.
+
+**Consequences.**
+- The contract account must keep a NEAR balance for storage: about 0.003 NEAR per escrow
+  and 0.0007 NEAR per signed action. Anyone holding two wallets can sign terms and create
+  escrows, so storage can be consumed by spam; the size limits bound each escrow, and the
+  balance has to be monitored.
+- The relayer and the jobs must attach 300 TGas to `approve_milestone` and `auto_release`.
+
+## D-20 — Contract toolchain and generated wallet fixtures
+
+**Context.** The contract has to be built reproducibly and tested both as plain logic and
+across contracts (D-11). D-02 calls for test fixtures signed by real wallets, but those
+can only be captured by hand from the browser extensions.
+
+**Decision.**
+- Rust 1.97.0 is pinned in `contracts/rust-toolchain.toml`; the contract uses near-sdk
+  5.30 and is built with cargo-near 0.23 (`non-reproducible-wasm`, which runs `wasm-opt`).
+- Logic is unit-tested on near-sdk's mocked blockchain. Token transfers, callbacks,
+  retries and registration are tested with near-workspaces against the built wasm on a
+  local sandbox node, with a mock NEP-141 token.
+- Signature fixtures are generated in the tests with ed25519-dalek, k256 and borsh, in the
+  exact byte formats the wallets use (architecture.md §5.3); known vectors check the
+  derivations. The NEP-366 meta transaction test signs delegate actions with
+  near-primitives, because near-workspaces has no builder for them.
+
+**Consequences.**
+- R-06 stays Partial until signatures captured from a NEAR wallet, MetaMask and Phantom are
+  added as fixtures.
+- The sandbox binary is downloaded on the first test run. nearcore raises its open-file
+  limit to 65,535 at startup, so the environment's hard limit must allow it (README).
+
