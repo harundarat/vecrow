@@ -7,6 +7,7 @@ mod create;
 mod funding;
 mod signature;
 mod split;
+mod submit;
 
 use crate::*;
 use near_sdk::json_types::U128;
@@ -225,4 +226,10 @@ pub fn funded_escrow(contract: &mut VecrowEscrow, wallet: &Wallet) -> String {
     bind(contract, &id, wallet, 200);
     assert_eq!(fund(contract, &id, usdc(1_500)), 0);
     id
+}
+
+/// The freelancer submits `milestone` at `now_ms`.
+pub fn submit(contract: &mut VecrowEscrow, escrow_id: &str, milestone: u32, now_ms: u64) {
+    set_context(FREELANCER, now_ms);
+    contract.submit_milestone(escrow_id.to_string(), milestone);
 }

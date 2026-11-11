@@ -12,6 +12,7 @@ mod bind;
 mod create;
 mod events;
 mod funding;
+mod milestones;
 pub mod signature;
 pub mod split;
 mod types;

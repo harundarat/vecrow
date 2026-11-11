@@ -29,4 +29,10 @@ pub enum VecrowEvent {
         sender_id: AccountId,
         amount: U128,
     },
+    #[event_version("1.0.0")]
+    MilestoneSubmitted {
+        escrow_id: String,
+        milestone: u32,
+        submitted_at_ms: u64,
+    },
 }
