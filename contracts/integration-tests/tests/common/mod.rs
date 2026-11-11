@@ -514,3 +514,87 @@ impl Env {
         Ok(balances)
     }
 }
+
+/// NEP-366 meta transactions: a user with no NEAR signs a delegate action and
+/// a relayer pays the gas to submit it. The contract sees the user as the
+/// predecessor.
+pub mod meta {
+    use super::*;
+    use near_crypto::{InMemorySigner, SecretKey, Signer};
+    use near_jsonrpc_client::{JsonRpcClient, methods};
+    use near_primitives::action::delegate::{
+        DelegateAction, NonDelegateAction, SignedDelegateAction,
+    };
+    use near_primitives::hash::CryptoHash;
+    use near_primitives::transaction::{
+        Action, FunctionCallAction, SignedTransaction, Transaction, TransactionV0,
+    };
+    use near_primitives::views::{ExecutionStatusView, FinalExecutionOutcomeView};
+
+    fn signer(account: &Account) -> Result<Signer> {
+        let key: SecretKey = account.secret_key().to_string().parse()?;
+        Ok(InMemorySigner::from_secret_key(account.id().clone(), key))
+    }
+
+    async fn next_nonce(worker: &Worker<Sandbox>, account: &Account) -> Result<u64> {
+        let key = account.secret_key().public_key();
+        Ok(worker.view_access_key(account.id(), &key).await?.nonce + 1)
+    }
+
+    /// `sender` signs a delegate action calling `method` on `receiver` with
+    /// no deposit; `relayer` wraps it in a transaction and pays for it.
+    /// Returns the error of the first failed receipt, if any.
+    pub async fn call(
+        worker: &Worker<Sandbox>,
+        relayer: &Account,
+        sender: &Account,
+        receiver: &AccountId,
+        method: &str,
+        args: Value,
+    ) -> Result<std::result::Result<(), String>> {
+        let block = worker.view_block().await?;
+        let sender_signer = signer(sender)?;
+        let delegate = DelegateAction {
+            sender_id: sender.id().clone(),
+            receiver_id: receiver.clone(),
+            actions: vec![
+                NonDelegateAction::try_from(Action::FunctionCall(Box::new(FunctionCallAction {
+                    method_name: method.to_string(),
+                    args: serde_json::to_vec(&args)?,
+                    gas: near_primitives::types::Gas::from_teragas(250),
+                    deposit: NearToken::from_yoctonear(0),
+                })))
+                .map_err(|_| anyhow::anyhow!("not a delegate-able action"))?,
+            ],
+            nonce: next_nonce(worker, sender).await?,
+            max_block_height: block.height() + 100,
+            public_key: sender_signer.public_key(),
+        };
+        let signed_delegate = SignedDelegateAction::sign(&sender_signer, delegate);
+
+        let relayer_signer = signer(relayer)?;
+        let tx = Transaction::V0(TransactionV0 {
+            signer_id: relayer.id().clone(),
+            public_key: relayer_signer.public_key(),
+            nonce: next_nonce(worker, relayer).await?,
+            receiver_id: sender.id().clone(),
+            block_hash: CryptoHash(block.hash().0),
+            actions: vec![Action::Delegate(Box::new(signed_delegate))],
+        });
+        let (hash, _) = tx.get_hash_and_size();
+        let signed = SignedTransaction::new(relayer_signer.sign(hash.as_ref()), tx);
+
+        let rpc = JsonRpcClient::connect(worker.rpc_addr());
+        let outcome: FinalExecutionOutcomeView = rpc
+            .call(methods::broadcast_tx_commit::RpcBroadcastTxCommitRequest {
+                signed_transaction: signed,
+            })
+            .await?;
+        for receipt in &outcome.receipts_outcome {
+            if let ExecutionStatusView::Failure(err) = &receipt.outcome.status {
+                return Ok(Err(format!("{err:?}")));
+            }
+        }
+        Ok(Ok(()))
+    }
+}

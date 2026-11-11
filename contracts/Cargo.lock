@@ -4044,6 +4044,9 @@ name = "vecrow-integration-tests"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "near-crypto",
+ "near-jsonrpc-client",
+ "near-primitives",
  "near-workspaces",
  "serde_json",
  "tokio",

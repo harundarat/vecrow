@@ -101,6 +101,14 @@ impl NearWallet {
         )
     }
 
+    /// The secret key in NEAR format, `ed25519:<base58 of seed ‖ public key>`,
+    /// so a sandbox account can hold the same key.
+    pub fn secret_key(&self) -> String {
+        let mut bytes = self.key.to_bytes().to_vec();
+        bytes.extend_from_slice(self.key.verifying_key().as_bytes());
+        format!("ed25519:{}", bs58::encode(bytes).into_string())
+    }
+
     /// The implicit account ID of this key: lowercase hex of the public key.
     pub fn implicit_account_id(&self) -> String {
         hex::encode(self.key.verifying_key().as_bytes())
