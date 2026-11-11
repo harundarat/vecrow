@@ -70,6 +70,25 @@ impl VecrowEscrow {
         .emit();
         paid
     }
+
+    /// Re-sends the pending payout of `account_id` in an escrow (R-20), e.g.
+    /// after the backend registered the account on the USDC contract. Anyone
+    /// may call it; a backend job does so automatically. The pending amount
+    /// is removed before the transfer is sent and restored by `on_payout` only
+    /// if it fails again, so two calls in a row can never pay twice. Returns
+    /// whether the transfer succeeded.
+    pub fn retry_payout(&mut self, escrow_id: String, account_id: AccountId) -> Promise {
+        let (id, mut escrow) = self.load_escrow(&escrow_id);
+        let index = escrow
+            .pending_payouts
+            .iter()
+            .position(|p| p.account_id == account_id)
+            .unwrap_or_else(|| env::panic_str("no pending payout for this account"));
+        let pending = escrow.pending_payouts.remove(index);
+        require_payout_gas(1);
+        self.save_escrow(id, escrow);
+        self.payout(id, &account_id, pending.amount.0)
+    }
 }
 
 impl VecrowEscrow {

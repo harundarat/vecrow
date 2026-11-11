@@ -9,6 +9,7 @@ mod create;
 mod funding;
 mod payout;
 mod refund;
+mod retry;
 mod revision;
 mod signature;
 mod split;
