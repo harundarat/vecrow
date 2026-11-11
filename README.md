@@ -4,10 +4,11 @@ Built at NEAR HACKATHON (Nov 2026) · Track: Real-World Money (`realworld`)
 
 ## What it is
 
-A client pays a freelancer or agency from any chain and token. Funds are held in an
-escrow contract on NEAR and released per approved milestone as USDC, minus a 0.5%
-platform fee, split automatically between team members. Freelancers and clients
-never buy NEAR for gas.
+A client pays a freelancer or agency from any chain and token. Either side can open
+the escrow and share a link; the other side joins with their wallet, and once the
+creator approves, the escrow goes on-chain. Funds are held in an escrow contract on
+NEAR and released per approved milestone as USDC, minus a 0.5% platform fee, split
+automatically between team members. Freelancers and clients never buy NEAR for gas.
 
 ## The problem
 
@@ -19,20 +20,29 @@ never buy NEAR for gas.
 
 > TODO: live demo URL · demo video (X post URL)
 
-1. Open `<demo-url>/new`, create an escrow with 2 milestones and a 70/30 split
-   → you get a client payment link.
-2. Open the link (no account needed), connect a wallet, sign once to bind it as
-   approver and set a NEAR refund account, pick USDC on Base, send to the deposit
-   address shown → status goes `ApproverBound` → `Funded`, with the NEAR transaction linked.
-3. As the freelancer, click "Submit milestone 1" (the wallet holds 0 NEAR)
+1. Log in at `<demo-url>` with a wallet, open `/new`, and create an escrow as the
+   freelancer with 2 milestones and a 70/30 split → you get a link for the client,
+   escrow status = `Open`.
+2. Open the link in another browser (no account needed), connect a wallet as the
+   client, enter a NEAR refund account, and sign the terms once
+   → escrow status = `PendingApproval`.
+3. As the freelancer, check the client's wallet and click "Approve" (one signature)
+   → the backend creates the escrow on-chain, escrow status = `Created`.
+4. As the client, pick USDC on Base and send to the deposit address shown
+   → escrow status = `Funded`, with the NEAR transaction linked.
+5. As the freelancer, click "Submit milestone 1" (the wallet holds 0 NEAR)
    → the relayer pays gas, milestone status = `Submitted`.
-4. As the client, click "Request revision" → milestone status = `RevisionRequested`;
+6. As the client, click "Request revision" → milestone status = `RevisionRequested`;
    the freelancer submits again → `Submitted`.
-5. As the client, click "Approve" → the treasury receives 0.5% and both team accounts
+7. As the client, click "Approve" → the treasury receives 0.5% and both team accounts
    receive their share; transaction links are shown on the dashboard.
-6. As the freelancer, click "Refund" on milestone 2 → USDC returns to the client's
+8. As the freelancer, click "Refund" on milestone 2 → USDC returns to the client's
    refund account, milestone status = `Refunded`, escrow status = `Completed`.
-7. Click "Export CSV" → one row per payout, fee included, ready for an accountant.
+9. Click "Export CSV" → one row per payout, fee included, ready for an accountant.
+
+The reverse direction works the same way: create the escrow as the client in step 1
+(approver wallet and refund account), let the freelancer join through the link with
+their NEAR account and split, and approve it as the client.
 
 > TODO: confirm every step against the deployed demo before the repository goes public.
 
@@ -40,11 +50,13 @@ never buy NEAR for gas.
 
 - **NEAR Intents 1Click API:** `EXACT_OUTPUT` quote with `recipient` = escrow contract and
   `customRecipientMsg` = `escrow_id`; the solver delivers USDC through `ft_transfer_call`.
-- **Escrow contract** (Rust, near-sdk): `ft_on_transfer` funding, milestones, revisions,
-  split, fee, refund, auto-release, payout callback with retry.
-- **Signed approvals** from NEAR (NEP-413), EVM (EIP-191) and Solana (ed25519) wallets,
-  verified by the contract.
-- **Meta transaction relayer:** pays gas only for calls to the Vecrow contract.
+- **Escrow contract** (Rust, near-sdk): `create_escrow` checks both parties' signatures
+  over the terms, `ft_on_transfer` funding, milestones, revisions, split, fee, refund,
+  auto-release, payout callback with retry.
+- **Signed terms and approvals** from NEAR (NEP-413), EVM (EIP-191) and Solana (ed25519)
+  wallets, verified by the contract.
+- **Meta transaction relayer:** pays gas only for calls to the Vecrow contract,
+  including creating escrows that both parties signed.
 - **NEP-141 storage registration:** the backend registers recipients so payouts never
   require users to hold NEAR.
 
@@ -52,8 +64,8 @@ never buy NEAR for gas.
 
 | Document | Contents |
 | --- | --- |
-| [`docs/spec.md`](./docs/spec.md) | Requirements R-01 to R-22, acceptance criteria, status, and links to code and tests |
-| [`docs/architecture.md`](./docs/architecture.md) | Components, money flow, contract methods, key flows, trust boundaries |
+| [`docs/spec.md`](./docs/spec.md) | Requirements R-01 to R-23, acceptance criteria, status, and links to code and tests |
+| [`docs/architecture.md`](./docs/architecture.md) | Components, money flow, contract methods, key flows (escrow creation, funding, approval, payout), trust boundaries |
 | [`docs/decisions.md`](./docs/decisions.md) | Design decisions and their trade-offs |
 
 ## Repository layout
@@ -62,17 +74,18 @@ never buy NEAR for gas.
 .
 ├── contracts/   # Rust, near-sdk — escrow contract and tests
 ├── backend/     # Go — REST API, relayer, 1Click watcher, jobs
-├── frontend/    # React + Vite — payment page, dashboard, account pages
+├── frontend/    # React + Vite — escrow pages, dashboard, account pages
 └── docs/        # spec, architecture, decisions
 ```
 
 ## Contract
 
 - Account: `TODO: <escrow>.near` (mainnet) · `TODO: <escrow>.testnet` (testnet)
-- Methods: `create_escrow`, `cancel`, `bind_approver`, `ft_on_transfer`, `submit_milestone`,
+- Methods: `create_escrow`, `cancel`, `ft_on_transfer`, `submit_milestone`,
   `approve_milestone`, `request_revision`, `auto_release`, `refund_unsubmitted`,
   `retry_payout`, `get_escrow`
-- Escrow statuses: `Created`, `ApproverBound`, `Funded`, `Completed`, `Cancelled`
+- Escrow statuses: `Created`, `Funded`, `Completed`, `Cancelled` (before an escrow is
+  on-chain, the backend also uses `Open`, `PendingApproval`, and `Approved`)
 - Milestone statuses: `Pending`, `Submitted`, `RevisionRequested`, `Released`, `Refunded`
 
 ## Run locally
@@ -142,7 +155,10 @@ are requested with `dry: true`.
 - Over- or under-payment returns go to `sender_id` per NEP-141, which on the 1Click
   path is not the client's source wallet.
 - The contract cannot prove the approver wallet is not a second wallet owned by the
-  freelancer; the payment page shows the bound approver and warns the client.
+  freelancer; the creator sees the other party's addresses before approving, and the
+  client escrow page shows the approver and warns the client.
+- The terms cannot be edited after the link is shared; the creator cancels and creates
+  a new escrow.
 - A lost wallet cannot recover contract rights (submit, approve, payouts); email
   recovery restores the account only.
 

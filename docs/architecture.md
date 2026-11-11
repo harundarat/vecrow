@@ -9,13 +9,15 @@ Vecrow has three parts:
 
 | Part | Responsibility | Holds funds? |
 | --- | --- | --- |
-| **Escrow contract** (NEAR) | Holds USDC per escrow, enforces milestone rules, verifies signed approvals, pays fee and split | Yes — the only component that does |
-| **Backend** | 1Click quotes and funding watcher, meta transaction relayer, storage registration, scheduled jobs, accounts and CSV export | No (see D-09 for the fallback exception) |
-| **Frontend** | Client payment page, freelancer dashboard, login, profile, "My escrows" | No |
+| **Escrow contract** (NEAR) | Holds USDC per escrow, verifies the terms both parties signed, enforces milestone rules, verifies signed approvals, pays fee and split | Yes — the only component that does |
+| **Backend** | Escrows until they are on-chain (terms, submissions, creator approval) and creating them with `create_escrow`, 1Click quotes and funding watcher, meta transaction relayer, storage registration, scheduled jobs, accounts and CSV export | No (see D-09 for the fallback exception) |
+| **Frontend** | Client escrow page, freelancer dashboard, login, profile, "My escrows" | No |
 
 Funds can leave the contract only through contract methods: approval, auto-release,
-freelancer refund, or `retry_payout`. The backend pays gas and `storage_deposit` in
-NEAR, but never decides where USDC goes.
+freelancer refund, or `retry_payout`. An escrow goes on-chain only when both parties
+have signed its terms, and the contract checks both signatures itself. The backend
+pays gas and `storage_deposit` in NEAR, but never decides where USDC goes or who
+approves.
 
 ## 2. Repository layout
 
@@ -23,7 +25,7 @@ NEAR, but never decides where USDC goes.
 .
 ├── contracts/   # Rust, near-sdk — the escrow contract and its tests
 ├── backend/     # Go — REST API, relayer, 1Click watcher, jobs
-├── frontend/    # React + Vite — payment page, dashboard, account pages
+├── frontend/    # React + Vite — escrow pages, dashboard, account pages
 └── docs/        # spec.md, architecture.md, decisions.md
 ```
 
@@ -32,7 +34,7 @@ NEAR, but never decides where USDC goes.
 ```mermaid
 flowchart TB
     subgraph FE["Frontend (React + Vite + NEAR Wallet Selector)"]
-        PAY["Client payment page"]
+        PAY["Client escrow page"]
         DASH["Freelancer dashboard"]
         ACC["Login, profile, My escrows"]
     end
@@ -40,7 +42,7 @@ flowchart TB
         API["REST API + auth<br/>(wallet session, guest token, email OTP)"]
         Q["1Click quote + watcher"]
         REL["Meta transaction relayer"]
-        JOB["Jobs: auto_release, retry_payout"]
+        JOB["Jobs: create_escrow, auto_release, retry_payout"]
         REG["storage_deposit registration"]
     end
     subgraph NEAR["NEAR"]
@@ -54,6 +56,7 @@ flowchart TB
     ACC --> API
     API --> Q --> ONE
     API --> REL --> ESC
+    JOB --> REL
     JOB --> ESC
     REG --> USDC
     ONE -->|USDC| USDC -->|ft_on_transfer| ESC
@@ -63,7 +66,7 @@ flowchart TB
 | Layer | Technology | Notes |
 | --- | --- | --- |
 | Contract | Rust, near-sdk, cargo-near, near-workspaces | Unit and integration tests run against a mock NEP-141 token on a local sandbox / testnet |
-| Backend | Go (Gin), PostgreSQL, Redis, RabbitMQ | 1Click is called over its REST API; NEAR transactions (relayer, `storage_deposit`, jobs) are sent over NEAR JSON-RPC. Jobs (funding watcher, auto-release, payout retry) are queued in RabbitMQ and processed by workers. Redis holds short-lived state with a TTL (login nonces, sessions, OTP rate limits). Layering in section 7.4 |
+| Backend | Go (Gin), PostgreSQL, Redis, RabbitMQ | 1Click is called over its REST API; NEAR transactions (relayer, `storage_deposit`, jobs) are sent over NEAR JSON-RPC. Jobs (escrow creation, funding watcher, auto-release, payout retry) are queued in RabbitMQ and processed by workers. Redis holds short-lived state with a TTL (login nonces, sessions, OTP rate limits). Layering in section 7.4 |
 | Frontend | React, Vite, NEAR Wallet Selector | Single-page app that talks only to the backend API. EVM and Solana wallets are only needed for signing; paying is a transfer to a deposit address from any wallet |
 
 ## 4. Money flow
@@ -82,7 +85,7 @@ flowchart LR
 ```
 
 Every arrow out of the contract is an `ft_transfer` on the USDC contract, followed by
-the `on_payout` callback (section 6.3).
+the `on_payout` callback (section 6.4).
 
 ## 5. Escrow contract
 
@@ -90,10 +93,9 @@ the `on_payout` callback (section 6.3).
 
 | Method | Caller | Effect | Requirements |
 | --- | --- | --- | --- |
-| `create_escrow` | Freelancer | Stores milestones, split, review window, and `fee_bps`; status `Created` | R-01, R-03, R-19 |
-| `cancel` | Freelancer | `Created` or `ApproverBound` → `Cancelled` | R-01 |
-| `bind_approver` | Relayer, with the client's signature | Sets approver scheme + address and `refund_account`; → `ApproverBound` | R-04 |
-| `ft_on_transfer` | USDC contract | Applies the funding amount rules; → `Funded` | R-02 |
+| `create_escrow` | Relayer, with the freelancer's and the client's signatures | Verifies both signatures over the same terms; stores freelancer, milestones, split, approver, `refund_account`, review window, and `fee_bps`; status `Created` | R-01, R-03, R-04, R-19, R-23 |
+| `cancel` | Freelancer (via relayer), or relayer with the approver's signature | `Created` → `Cancelled` | R-01 |
+| `ft_on_transfer` | USDC contract | Applies the funding amount rules; `Created` → `Funded` | R-02 |
 | `submit_milestone` | Freelancer (via relayer) | `Pending` / `RevisionRequested` → `Submitted`; starts the review window | R-05 |
 | `approve_milestone` | Relayer, with the approver's signature | `Submitted` → `Released`; pays fee and split | R-06, R-19 |
 | `request_revision` | Relayer, with the approver's signature | `Submitted` → `RevisionRequested`; increments `revision_count` (max 2) | R-17 |
@@ -104,21 +106,33 @@ the `on_payout` callback (section 6.3).
 | `get_escrow` | Anyone (view) | Escrow, milestones, approver, pending payouts | — |
 
 The escrow becomes `Completed` when every milestone is `Released` or `Refunded`.
+Escrows that are not on-chain yet (`Open`, `PendingApproval`, `Approved`) exist only in
+the backend (section 6.1); the contract never sees them.
 
 ### 5.2 State
 
 | Item | Contents |
 | --- | --- |
 | Configuration | USDC contract ID, `treasury_account`, default `fee_bps`, review window (set at deploy) |
-| Escrows | Freelancer, milestones (amount, status, last submit time, `revision_count`), split, locked `fee_bps`, approver, `refund_account`, status |
+| Escrows | Freelancer, split, approver, `refund_account`, and locked `fee_bps` (all fixed by `create_escrow`); milestones (amount, status, last submit time, `revision_count`); status |
 | Used nonces | Per approver, to reject replayed signatures |
 | `pending_payout` | `escrow_id → account → amount` for transfers that failed |
 
 ### 5.3 Signature verification
 
-Approvals, revisions, and approver binding carry a payload with the escrow ID,
-milestone, action, nonce, and deadline. The contract checks the signature for the
-approver's scheme, then rejects reused nonces and expired deadlines.
+The contract verifies two kinds of signed payload:
+
+- **Escrow terms** (`create_escrow`): escrow ID, freelancer, milestones, split,
+  approver scheme and address, `refund_account`, `fee_bps`, and a deadline. Both
+  parties sign the same terms: the freelancer with NEP-413 from their NEAR account, the
+  client with the approver's scheme. The backend builds the message, so both
+  signatures cover the same bytes. The contract rejects an expired deadline and an
+  escrow ID that already exists, so signed terms cannot be replayed.
+- **Actions** (approve, request revision, cancel by the client): escrow ID, milestone
+  (for approve and revision), action, nonce, and deadline, signed by the approver. The contract rejects reused
+  nonces and expired deadlines.
+
+Each signature is checked for its scheme:
 
 | Scheme | Wallets | Verification |
 | --- | --- | --- |
@@ -128,21 +142,56 @@ approver's scheme, then rejects reused nonces and expired deadlines.
 
 ## 6. Key flows
 
-### 6.1 Funding from another chain
+### 6.1 Escrow proposal and creation on-chain
 
 ```mermaid
 sequenceDiagram
-    participant C as Client (payment page)
+    participant C as Creator (freelancer or client)
+    participant O as Other party (link page)
+    participant B as Backend
+    participant U as USDC contract
+    participant E as Escrow contract
+
+    C->>B: POST /escrows (role, milestones, own details)
+    B-->>C: escrow link (status Open)
+    C-->>O: share the link
+    O->>B: POST /escrows/:id/terms (own details)
+    B-->>O: final terms + message to sign
+    O->>O: sign the terms
+    O->>B: POST /escrows/:id/counterparty (details + signature)
+    B-->>O: guest token (status PendingApproval)
+    C->>B: GET /escrows/:id (submission + same message)
+    C->>C: sign the same terms
+    C->>B: POST /escrows/:id/counterparty/approve (signature)
+    Note over B: status Approved, job queued
+    B->>U: storage_deposit(split recipients, refund_account) if needed
+    B->>E: create_escrow(terms, freelancer signature, client signature) via relayer
+    E->>E: verify both signatures, deadline, rules
+    B-->>C: status Created
+```
+
+The details each party adds depend on their role, not on who created the escrow: the
+freelancer always provides their NEAR account and the split, and the client always
+provides the approver wallet and `refund_account`. If the creator rejects the
+submission, or its deadline passes, the escrow returns to `Open` and the same link can
+be used again. If `create_escrow` is rejected, for example because the deadline passed
+before the job ran, the escrow also returns to `Open`.
+
+### 6.2 Funding from another chain
+
+Funding starts once the escrow is `Created` (section 6.1). The client proves the
+approver wallet with the guest token from joining (R-21) or with a session that
+includes that wallet.
+
+```mermaid
+sequenceDiagram
+    participant C as Client (approver wallet)
     participant B as Backend
     participant O as 1Click
     participant U as USDC contract
     participant E as Escrow contract
 
-    C->>B: POST /escrows/:id/approver (signed bind payload)
-    B->>U: storage_deposit(refund_account) if needed
-    B->>E: bind_approver (via relayer)
-    B-->>C: guest token
-    C->>B: POST /escrows/:id/quote (guest token)
+    C->>B: POST /escrows/:id/quote (guest token or session)
     B->>O: quote EXACT_OUTPUT, recipient = contract, customRecipientMsg = escrow_id
     O-->>B: deposit address
     B-->>C: deposit address
@@ -160,7 +209,7 @@ sequenceDiagram
 If the mainnet test shows `customRecipientMsg` is not reliable, 1Click delivers to a
 backend account instead, and the backend calls `ft_transfer_call` itself (D-09).
 
-### 6.2 Gasless submit and approve
+### 6.3 Gasless submit and approve
 
 ```mermaid
 sequenceDiagram
@@ -175,13 +224,14 @@ sequenceDiagram
     A->>B: POST /milestones/:n/approve (payload + signature)
     B->>E: approve_milestone(payload, signature)
     E->>E: verify signature, nonce, deadline
-    E->>E: pay fee + split (section 6.3)
+    E->>E: pay fee + split (section 6.4)
 ```
 
 The relayer only submits transactions whose receiver is the Vecrow contract. It does
-not sign approvals and cannot change the payload without invalidating the signature.
+not sign approvals or terms, and cannot change a payload without invalidating the
+signature.
 
-### 6.3 Payout with retry
+### 6.4 Payout with retry
 
 ```mermaid
 sequenceDiagram
@@ -212,36 +262,38 @@ two retries in a row cannot pay twice.
 | --- | --- | --- |
 | API | REST endpoints listed in `spec.md` section 7 | — |
 | Auth | Wallet login (nonce + signature), sessions, guest tokens, email OTP recovery | R-13, R-14, R-21, R-22 |
-| Escrows | Escrow metadata, client invitations, role queries, revision notes | R-15, R-16, R-17 |
+| Escrows | Escrows until they are on-chain (terms, the other party's submission, creator approval or rejection), invitations, role queries, revision notes | R-15, R-16, R-17, R-23 |
 | 1Click | Token list, quotes, funding status watcher | R-08 |
-| Relayer | Forwards signed actions to the Vecrow contract and pays gas | R-09 |
+| Relayer | Forwards signed actions and approved escrow terms to the Vecrow contract and pays gas | R-09, R-23 |
 | Storage | `storage_balance_of` checks and `storage_deposit` registration | R-20 |
-| Jobs | `auto_release` when the window ends, `retry_payout` for pending payouts | R-07, R-20 |
+| Jobs | `create_escrow` for approved escrows, `auto_release` when the window ends, `retry_payout` for pending payouts | R-07, R-20, R-23 |
 | Export | CSV export, one row per payout, fee as its own row | R-12 |
 
 ### 7.2 Data
 
-PostgreSQL stores what the contract does not need: accounts, linked wallets and
-emails, client invitations, revision notes, 1Click quotes and funding status, and an
-index of payouts and transaction hashes for the dashboard and CSV export. The contract
-remains the source of truth for balances and statuses; the backend reads them from
-the contract.
+PostgreSQL stores what the contract does not need, or does not have yet: escrows
+before they go on-chain (terms, the other party's submission, and both signatures),
+accounts, linked wallets and emails, invitations, revision notes, 1Click quotes and
+funding status, and an index of payouts and transaction hashes for the dashboard and
+CSV export. Once an escrow is on-chain, the contract is the source of truth for its
+balances and statuses; the backend reads them from the contract.
 
 ### 7.3 Jobs
 
 | Job | Trigger | Action |
 | --- | --- | --- |
+| Escrow creation | The creator approved (`Approved`) | Ensures storage registration, then calls `create_escrow` with both signatures; marks the escrow `Created`, or returns it to `Open` if the contract rejects the terms |
 | Funding watcher | After a quote | Polls 1Click until `SUCCESS` or `REFUNDED` |
 | Auto-release | Review window ended for a `Submitted` milestone | Calls `auto_release` |
 | Payout retry | `pending_payout` is non-empty | Ensures registration, then calls `retry_payout` |
 
-A scheduler in the backend periodically finds due work in PostgreSQL (quotes still
-pending, milestones whose review window has ended, pending payouts) and publishes a
-message per item to RabbitMQ. Workers consume the messages and call 1Click or the
-contract. Failed messages are retried with a delay: each topic has a retry queue whose
-TTL is `QUEUE_RETRY_DELAY`. After `QUEUE_MAX_RETRIES` retries, or on an error marked
-permanent (such as a malformed payload), the message moves to the topic's dead-letter
-queue.
+A scheduler in the backend periodically finds due work in PostgreSQL (approved escrows
+not yet on-chain, quotes still pending, milestones whose review window has ended,
+pending payouts) and publishes a message per item to RabbitMQ. Workers consume the
+messages and call 1Click or the contract. Failed messages are retried with a delay:
+each topic has a retry queue whose TTL is `QUEUE_RETRY_DELAY`. After
+`QUEUE_MAX_RETRIES` retries, or on an error marked permanent (such as a malformed
+payload), the message moves to the topic's dead-letter queue.
 
 Queue topology for a topic `T` (all durable):
 
@@ -256,8 +308,10 @@ existing topic requires deleting `T.retry` first, because RabbitMQ rejects re-de
 a queue with different arguments.
 
 All jobs are idempotent: running one twice has the same effect as running it once,
-because the contract rejects calls that are not valid for the current state. This makes
-RabbitMQ's at-least-once delivery safe.
+because the contract rejects calls that are not valid for the current state. When
+`create_escrow` reports that the escrow ID already exists, the creation job reads it
+with `get_escrow` and marks it `Created`. This makes RabbitMQ's at-least-once delivery
+safe.
 
 ### 7.4 Code structure
 
@@ -332,12 +386,12 @@ of an account cannot be unlinked.
 
 | Actor | Can | Cannot |
 | --- | --- | --- |
-| Freelancer | Create, cancel before funding, submit, refund `Pending` milestones | Approve, change the approver, take funds for itself outside the split |
-| Approver (client) | Bind once, approve, request up to 2 revisions | Refund, change the approver after funding, hold funds beyond the review window |
+| Freelancer | Create an escrow or join one, choose and sign their account and the split, approve or reject the client's submission when they created the escrow, cancel before funding, submit, refund `Pending` milestones | Approve milestones, choose or change the approver, take funds for itself outside the split |
+| Client (approver) | Create an escrow or join one, choose and sign the approver and `refund_account`, approve or reject the freelancer's submission when they created the escrow, cancel before funding, approve, request up to 2 revisions | Choose the split, refund, change the approver after the escrow is on-chain, hold funds beyond the review window |
 | Anyone | Call `auto_release` after the window, `retry_payout` | Change where funds go |
-| Relayer | Pay gas for calls to the Vecrow contract | Approve, forge or alter signed payloads, call other contracts |
-| Backend | Register storage, run jobs, manage accounts | Move USDC (except under the D-09 fallback) |
-| Account / session | Show escrows, act as a login | Grant any right in the contract |
+| Relayer | Pay gas for calls to the Vecrow contract, including `create_escrow` | Approve, forge or alter signed payloads or terms, call other contracts |
+| Backend | Store escrows until they are on-chain, create on-chain the escrows both parties signed, register storage, run jobs, manage accounts | Change signed terms, create an escrow without both signatures, move USDC (except under the D-09 fallback) |
+| Account / session | Show escrows, act as a login, start an escrow | Grant any right in the contract |
 
 ## 9. Networks and configuration
 
@@ -347,7 +401,7 @@ of an account cannot be unlinked.
 | Mainnet (demo) | Separate development account | USDC (contract ID from the 1Click token list) | 1Click with small amounts |
 
 Configuration such as RPC URL, contract and treasury account IDs, the relayer and
-backend keys, the PostgreSQL and RabbitMQ URLs, the 1Click API settings, and the review
-window is read from environment variables. Every variable is listed in the
-`.env.example` file of `backend/` and `frontend/` without real values; keys are never
-committed.
+backend keys, the PostgreSQL and RabbitMQ URLs, the 1Click API settings, the review
+window, and the signing deadline for escrow terms is read from environment variables.
+Every variable is listed in the `.env.example` file of `backend/` and `frontend/`
+without real values; keys are never committed.

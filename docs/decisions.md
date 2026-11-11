@@ -8,8 +8,8 @@ consequences, including the trade-offs we accept.
 
 | ID | Decision | Date | Status | Requirements |
 | --- | --- | --- | --- | --- |
-| [D-01](#d-01--the-client-binds-the-approver-at-payment-time) | The client binds the approver at payment time | 2026-11-07 | Accepted | R-04, R-10, R-15 |
-| [D-02](#d-02--approvals-are-verified-on-chain-from-wallet-signatures) | Approvals are verified on-chain from wallet signatures | 2026-11-07 | Accepted | R-06, R-09, R-17, R-21 |
+| [D-01](#d-01--the-client-binds-the-approver-at-payment-time) | The client binds the approver at payment time | 2026-11-07 | Superseded by D-14 | R-04, R-10, R-15 |
+| [D-02](#d-02--approvals-are-verified-on-chain-from-wallet-signatures) | Approvals are verified on-chain from wallet signatures | 2026-11-07 | Accepted | R-01, R-06, R-09, R-17, R-21 |
 | [D-03](#d-03--capped-revisions-and-auto-release-instead-of-rejection-or-arbitration) | Capped revisions and auto-release instead of rejection or arbitration | 2026-11-08 | Accepted | R-07, R-17 |
 | [D-04](#d-04--only-the-freelancer-can-refund-and-only-unsubmitted-milestones) | Only the freelancer can refund, and only unsubmitted milestones | 2026-11-08 | Accepted | R-04, R-18 |
 | [D-05](#d-05--funding-amount-rules-and-exact_output-quotes) | Funding amount rules and `EXACT_OUTPUT` quotes | 2026-11-08 | Accepted | R-02, R-08 |
@@ -21,10 +21,18 @@ consequences, including the trade-offs we accept.
 | [D-11](#d-11--testnet-for-contract-development-mainnet-for-1click) | Testnet for contract development, mainnet for 1Click | 2026-11-07 | Accepted | R-08 |
 | [D-12](#d-12--backend-stack-and-layering) | Backend stack and layering | 2026-11-08 | Accepted | — |
 | [D-13](#d-13--wallet-login-plain-text-challenge-and-opaque-bearer-sessions) | Wallet login: plain-text challenge and opaque bearer sessions | 2026-11-09 | Accepted | R-13, R-14 |
+| [D-14](#d-14--either-party-creates-the-escrow-it-goes-on-chain-only-after-both-sign-the-same-terms) | Either party creates the escrow; it goes on-chain only after both sign the same terms | 2026-11-11 | Accepted | R-01, R-03, R-04, R-15, R-21, R-23 |
 
 ---
 
 ## D-01 — The client binds the approver at payment time
+
+> **Superseded by [D-14](#d-14--either-party-creates-the-escrow-it-goes-on-chain-only-after-both-sign-the-same-terms)
+> (2026-11-11).** Either party can now create the escrow. The client sets the approver
+> and `refund_account` in the terms they sign, whether they created the escrow or
+> joined it, and `create_escrow` verifies that signature. There is no `bind_approver`
+> step and no `ApproverBound` status any more. The core rule below still holds: only
+> the client chooses the approver. The rest of this section is kept as history.
 
 **Context.** The freelancer creates the escrow, but the approver must be the client.
 If the freelancer could name the approver, they could name a wallet they control and
@@ -51,9 +59,11 @@ address is only shown to the bound approver wallet.
 to approve. A relayer pays the gas, which means the relayer must not be trusted with
 the decision itself.
 
-**Decision.** Approvals (R-06) and revision requests (R-17) are payloads signed by the
-approver's own wallet, with a nonce and a deadline. The contract verifies the
-signature itself, for three schemes:
+**Decision.** Approvals (R-06), revision requests (R-17), and a client's cancellation
+before funding (R-01) are payloads signed by the approver's own wallet, with a nonce
+and a deadline. The escrow terms are signed the same way by both parties before the
+escrow goes on-chain (D-14). The contract verifies the signatures itself, for three
+schemes:
 
 | Wallet | Scheme |
 | --- | --- |
@@ -103,8 +113,8 @@ that has been submitted.
 
 **Decision.** Only the freelancer can call `refund_unsubmitted`, for one or all
 `Pending` milestones of a `Funded` escrow (R-18). The USDC goes to the client's
-`refund_account`, set when the approver was bound (D-01). Refunds are not charged a
-fee (D-06).
+`refund_account`, which the client set in the signed escrow terms (D-14). Refunds are
+not charged a fee (D-06).
 
 **Alternatives.**
 - Client-initiated refund: lets the client claw back funds without a dispute process.
@@ -121,9 +131,9 @@ fee (D-06).
 not match the escrow total exactly.
 
 **Decision.** In `ft_on_transfer` (R-02):
-- Less than the total: returned in full; the escrow stays `ApproverBound`.
+- Less than the total: returned in full; the escrow stays `Created`.
 - Equal to or more than the total: the escrow becomes `Funded` with exactly the total, and `amount - total` is returned through the NEP-141 return value.
-- Transfers to an escrow that is not `ApproverBound`, of another token, or with an unknown `escrow_id`: returned in full.
+- Transfers to an escrow that is not `Created`, of another token, or with an unknown `escrow_id` (including an escrow that is not on-chain yet): returned in full.
 
 Funding quotes use 1Click `EXACT_OUTPUT` (R-08), so the amount delivered matches the total.
 
@@ -140,7 +150,7 @@ Funding quotes use 1Click `EXACT_OUTPUT` (R-08), so the amount delivered matches
 milestone amount, with no dust left in the contract.
 
 **Decision.**
-- `fee_bps = 50` is stored per escrow at `create_escrow`; later configuration changes do not affect existing escrows (R-19).
+- `fee_bps = 50` is part of the terms both parties sign (D-14) and is stored per escrow at `create_escrow`. Terms signed with a `fee_bps` that differs from the current configuration are rejected; later configuration changes do not affect escrows that are already on-chain (R-19).
 - On each release, `fee = floor(amount × fee_bps / 10,000)` goes to `treasury_account`; the remainder is split by bps (R-03).
 - Split rounding remainders go to the first recipient.
 - The contract asserts that fee + all shares = milestone amount.
@@ -149,7 +159,7 @@ milestone amount, with no dust left in the contract.
 **Example.** A 1,000 USDC milestone with a 70/30 split: 5 to treasury, 696.5 and 298.5 to the recipients.
 
 **Consequences.**
-- Fees are predictable for both parties and are shown on the dashboard and the payment page.
+- Fees are predictable for both parties and are shown before signing the terms, on the dashboard, and on the client escrow page.
 - The first split recipient may receive up to a few base units more than their exact share.
 
 ## D-07 — The backend registers storage; failed payouts are retried
@@ -161,7 +171,7 @@ register.
 
 **Decision.** (R-20)
 - The escrow contract and `treasury_account` are registered at deploy time.
-- The backend checks `storage_balance_of` and pays `storage_deposit` (`registration_only = true`) from a backend account: split recipients before `create_escrow`, `refund_account` before binding the approver.
+- The backend checks `storage_balance_of` and pays `storage_deposit` (`registration_only = true`) from a backend account for the split recipients and the `refund_account`, before it calls `create_escrow` (D-14).
 - Every payout uses `ft_transfer` with an `on_payout` callback. A failed transfer is recorded in `pending_payout[escrow][account]`.
 - Anyone may call `retry_payout(escrow_id, account)`; a backend job calls it automatically. The pending amount is zeroed before sending and restored if the transfer fails again.
 
@@ -181,9 +191,9 @@ contract.
 
 **Decision.**
 - Sign-up and login use a wallet signature over a backend nonce; the first login creates the account (R-13). Further wallets and an optional email can be linked (R-14).
-- The client can pay without an account. Binding the approver returns a guest token for one escrow and one wallet, valid for 24 hours (R-21).
-- Email OTP login is a recovery-only session: it can link a new wallet (still proven by that wallet's signature) and unlink old ones, but cannot create escrows or change client invitations (R-22).
-- The contract never reads accounts. Submit, approve, revise, refund, and payouts depend only on wallet keys and signatures.
+- Creating an escrow needs a wallet session. The other party can join through the link without an account: their signed submission returns a guest token for one escrow and one wallet, valid for 24 hours (R-21).
+- Email OTP login is a recovery-only session: it can link a new wallet (still proven by that wallet's signature) and unlink old ones, but cannot create escrows, approve or reject the other party, or change invitations (R-22).
+- The contract never reads accounts. Creating the escrow on-chain, submit, approve, revise, refund, and payouts depend only on wallet keys and signatures.
 
 **Consequences.**
 - A compromised backend account or email cannot move funds.
@@ -211,11 +221,13 @@ the backend calls `ft_transfer_call` to the contract with `msg = escrow_id`.
 
 ## D-10 — One set of status names across contract and API
 
-**Decision.** The contract enums `EscrowStatus { Created, ApproverBound, Funded,
-Completed, Cancelled }` and `MilestoneStatus { Pending, Submitted, RevisionRequested,
-Released, Refunded }` are serialized as PascalCase strings. The API, mock data, and
-documentation use the same strings with no mapping. 1Click funding status (`PENDING`,
-`SUCCESS`, `REFUNDED`) is kept separate and appears only in
+**Decision.** The contract enums `EscrowStatus { Created, Funded, Completed,
+Cancelled }` and `MilestoneStatus { Pending, Submitted, RevisionRequested, Released,
+Refunded }` are serialized as PascalCase strings. Before an escrow is on-chain, the
+backend uses three more escrow statuses, `Open`, `PendingApproval`, and `Approved`,
+and records `Cancelled` itself for escrows cancelled before that point (D-14). The
+API, mock data, and documentation use the same strings with no mapping. 1Click
+funding status (`PENDING`, `SUCCESS`, `REFUNDED`) is kept separate and appears only in
 `GET /escrows/:id/funding`.
 
 **Consequences.** There is no translation layer to drift between contract, backend,
@@ -298,3 +310,36 @@ app on its own origin.
 - Logging in with a NEAR named account depends on the NEAR RPC being available.
 - The token is readable by frontend scripts, so XSS must be prevented on the frontend.
 - Sessions are not revoked when a wallet is unlinked; they belong to the account.
+
+## D-14 — Either party creates the escrow; it goes on-chain only after both sign the same terms
+
+**Context.** A deal can start on either side: a client hiring for a project, or a
+freelancer sending an offer. Until now only the freelancer could create an escrow, and
+the client bound the approver on the payment page afterwards (D-01). The new rule is
+that either party creates the escrow and shares a link, the other party submits their
+address, and the creator approves the submission before the backend creates the
+escrow on-chain. Because the backend now sends `create_escrow`, the contract must not
+have to trust the backend for who is paid and who approves.
+
+**Decision.** (R-01, R-23)
+- Either party creates the escrow with a wallet session, choosing their role, the milestones, and their own details. It is stored only in the backend (`Open`), and the creator shares its link.
+- Each party always provides the details of their own role, whoever created the escrow: the freelancer their NEAR account and the split, the client the approver wallet and `refund_account`. The rule from D-01 still holds, and now in both directions: only the client chooses the approver, and only the freelancer chooses the split.
+- The other party submits their details and signs the final terms: escrow ID, freelancer, milestones, split, approver, `refund_account`, `fee_bps`, and a deadline (`PendingApproval`).
+- The creator approves by signing the same terms (`Approved`), or rejects the submission, which returns the escrow to `Open`. A submission not approved before its deadline expires the same way.
+- A backend job registers storage (D-07) and calls `create_escrow(terms, freelancer_signature, client_signature)` through the relayer. The contract verifies both signatures, the deadline, that the escrow ID is new, and the rules on approver, `refund_account`, split, and fee; the escrow becomes `Created`.
+- `bind_approver` and the `ApproverBound` status are removed: the approver and `refund_account` are fixed by `create_escrow`.
+- Before the escrow is on-chain, only the creator can cancel it, and nothing is sent to the contract. Once it is `Created` and before it is funded, the freelancer or the approver can call `cancel`.
+- The terms cannot be edited once the link is shared; the creator cancels and creates a new escrow.
+
+**Alternatives.**
+- Keep freelancer-only creation and bind the approver at payment time (D-01): a client cannot start an escrow.
+- The backend verifies the signatures off-chain and calls `create_escrow` as a trusted deployer: a simpler contract, but a compromised backend could set its own approver or split recipients.
+- Create the escrow on-chain immediately and let the other party bind later: gas and contract storage are spent on escrows that are never accepted, and the creator cannot review the other party before anything is on-chain.
+- Deploy a separate contract per escrow (factory): more gas and storage per escrow and harder upgrades, for no gain over one contract that holds many escrows.
+
+**Consequences.**
+- No gas or contract storage is spent until both parties agree.
+- The backend can delay or refuse to create an escrow on-chain, but it cannot change the terms or create one without both signatures.
+- The freelancer signs the terms with their NEAR wallet (NEP-413) and the client with the approver wallet, so the contract verifies two more signatures per escrow.
+- If the creator approves too late, the other party's signature expires and they must submit again.
+- As before, the contract cannot prove that the approver is not a second wallet owned by the freelancer. The creator sees the other party's addresses before approving, and the client escrow page shows the approver.
