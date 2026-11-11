@@ -52,6 +52,22 @@ pub struct Env {
     pub client: Account,
 }
 
+/// Deploys and initializes a mock NEP-141 token on a new account `name`.
+pub async fn deploy_token(worker: &Worker<Sandbox>, name: &str) -> Result<Contract> {
+    let account = subaccount(worker, name, 20).await?;
+    let token = account
+        .deploy(&wasm("mock-ft", "mock_ft.wasm")?)
+        .await?
+        .into_result()?;
+    token
+        .call("new")
+        .args_json(json!({ "symbol": "USDC", "decimals": 6 }))
+        .transact()
+        .await?
+        .into_result()?;
+    Ok(token)
+}
+
 async fn subaccount(worker: &Worker<Sandbox>, name: &str, near: u128) -> Result<Account> {
     let root = worker.root_account()?;
     let account = root
@@ -141,6 +157,47 @@ impl Env {
             .await?
             .into_result()?;
         Ok(())
+    }
+
+    /// `sender` calls `ft_transfer_call` on `token` to the escrow contract
+    /// with `msg = escrow_id`. The result is the amount the escrow kept.
+    pub async fn transfer_call(
+        &self,
+        token: &Contract,
+        sender: &Account,
+        escrow_id: &str,
+        amount: u128,
+    ) -> Result<u128> {
+        let used: String = sender
+            .call(token.id(), "ft_transfer_call")
+            .args_json(json!({
+                "receiver_id": self.escrow.id(),
+                "amount": amount.to_string(),
+                "msg": escrow_id,
+            }))
+            .deposit(ONE_YOCTO)
+            .gas(Gas::from_tgas(100))
+            .transact()
+            .await?
+            .into_result()?
+            .json()?;
+        Ok(used.parse()?)
+    }
+
+    /// The client funds `escrow_id` with USDC; returns the amount kept.
+    pub async fn fund(&self, escrow_id: &str, amount: u128) -> Result<u128> {
+        self.transfer_call(&self.usdc, &self.client, escrow_id, amount)
+            .await
+    }
+
+    /// Creates the default escrow, binds `wallet` and funds it with exactly
+    /// the total (1,500 USDC minted to the client first).
+    pub async fn funded_escrow(&self, wallet: &Wallet, nonce: u8) -> Result<String> {
+        let id = self.create_default_escrow().await?;
+        self.bind(&id, wallet, nonce).await?.into_result()?;
+        self.mint(self.client.id(), usdc(1_500)).await?;
+        ensure!(self.fund(&id, usdc(1_500)).await? == usdc(1_500));
+        Ok(id)
     }
 
     pub async fn mint(&self, account_id: &AccountId, amount: u128) -> Result<()> {

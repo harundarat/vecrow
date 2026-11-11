@@ -76,7 +76,11 @@ pub struct Escrow {
     /// The client's NEAR account for refunds, set with the approver.
     pub refund_account: Option<AccountId>,
     pub status: EscrowStatus,
+    /// USDC held for milestones that are neither released nor refunded.
+    /// Equals the total once funded, and decreases with each payout.
+    pub balance: u128,
     pub created_at_ms: u64,
+    pub funded_at_ms: Option<u64>,
 }
 
 impl Escrow {
@@ -101,7 +105,10 @@ pub struct EscrowView {
     pub refund_account: Option<AccountId>,
     /// Sum of all milestone amounts.
     pub total: U128,
+    /// USDC still held for unreleased, unrefunded milestones.
+    pub balance: U128,
     pub created_at_ms: u64,
+    pub funded_at_ms: Option<u64>,
 }
 
 impl EscrowView {
@@ -117,7 +124,9 @@ impl EscrowView {
             approver: escrow.approver.as_ref().map(ApproverKey::to_approver),
             refund_account: escrow.refund_account.clone(),
             total: U128(escrow.total()),
+            balance: U128(escrow.balance),
             created_at_ms: escrow.created_at_ms,
+            funded_at_ms: escrow.funded_at_ms,
         }
     }
 }

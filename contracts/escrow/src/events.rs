@@ -23,4 +23,10 @@ pub enum VecrowEvent {
         approver: Approver,
         refund_account: AccountId,
     },
+    #[event_version("1.0.0")]
+    EscrowFunded {
+        escrow_id: String,
+        sender_id: AccountId,
+        amount: U128,
+    },
 }

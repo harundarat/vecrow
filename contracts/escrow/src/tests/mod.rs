@@ -4,6 +4,7 @@
 
 mod bind;
 mod create;
+mod funding;
 mod signature;
 mod split;
 
@@ -194,4 +195,34 @@ pub fn bind_with(contract: &mut VecrowEscrow, args: BindArgs) {
 /// Binds `wallet` as the approver with `REFUND` as the refund account.
 pub fn bind(contract: &mut VecrowEscrow, escrow_id: &str, wallet: &Wallet, nonce: u8) {
     bind_with(contract, sign_bind(wallet, escrow_id, REFUND, nonce));
+}
+
+/// The token contract calls `ft_on_transfer` for `sender` and `amount`;
+/// returns the amount the token gives back to the sender.
+pub fn transfer_call_from(
+    contract: &mut VecrowEscrow,
+    token: &str,
+    sender: &str,
+    amount: u128,
+    msg: &str,
+) -> u128 {
+    set_context(token, T0_MS);
+    match contract.ft_on_transfer(account(sender), U128(amount), msg.to_string()) {
+        near_sdk::PromiseOrValue::Value(returned) => returned.0,
+        near_sdk::PromiseOrValue::Promise(_) => panic!("ft_on_transfer returned a promise"),
+    }
+}
+
+/// The client funds `escrow_id` with `amount` USDC base units.
+pub fn fund(contract: &mut VecrowEscrow, escrow_id: &str, amount: u128) -> u128 {
+    transfer_call_from(contract, USDC, CLIENT, amount, escrow_id)
+}
+
+/// Creates the default escrow (1,000 + 500 USDC, 70/30), binds `wallet` and
+/// funds it with exactly the total.
+pub fn funded_escrow(contract: &mut VecrowEscrow, wallet: &Wallet) -> String {
+    let id = create_default(contract);
+    bind(contract, &id, wallet, 200);
+    assert_eq!(fund(contract, &id, usdc(1_500)), 0);
+    id
 }

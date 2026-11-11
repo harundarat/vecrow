@@ -47,7 +47,9 @@ impl VecrowEscrow {
             approver: None,
             refund_account: None,
             status: EscrowStatus::Created,
+            balance: 0,
             created_at_ms: env::block_timestamp_ms(),
+            funded_at_ms: None,
         };
         self.save_escrow(id, escrow);
 
