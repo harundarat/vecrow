@@ -523,6 +523,29 @@ impl Env {
         self.call(&self.relayer, action, args).await
     }
 
+    /// Arguments of `cancel` signed by the approver `wallet`.
+    pub fn cancel_args(
+        &self,
+        escrow_id: &str,
+        wallet: &Wallet,
+        nonce: u8,
+        deadline_ms: u64,
+    ) -> Value {
+        let nonce = wallet_fixtures::nonce(nonce);
+        let message = wallet_fixtures::cancel_message(
+            self.escrow.id().as_str(),
+            escrow_id,
+            &nonce,
+            deadline_ms,
+        );
+        json!({
+            "escrow_id": escrow_id,
+            "nonce": wallet_fixtures::nonce_hex(&nonce),
+            "deadline_ms": deadline_ms,
+            "signature": wallet.sign(&message, &nonce, self.escrow.id()),
+        })
+    }
+
     pub async fn approve(
         &self,
         escrow_id: &str,

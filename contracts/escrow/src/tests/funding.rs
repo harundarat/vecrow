@@ -65,7 +65,7 @@ fn cancelled_escrow_returns_transfer() {
     let mut contract = new_contract();
     let id = create_default(&mut contract);
     set_context(FREELANCER, T0_MS);
-    contract.cancel(id.clone());
+    contract.cancel(id.clone(), None, None, None);
     assert_eq!(fund(&mut contract, &id, usdc(1_500)), usdc(1_500));
     assert_eq!(view(&contract, &id).status, EscrowStatus::Cancelled);
 }
@@ -110,5 +110,5 @@ fn funded_escrow_cannot_be_cancelled() {
     let mut contract = new_contract();
     let id = funded_escrow(&mut contract, &Wallet::near());
     set_context(FREELANCER, T0_MS);
-    contract.cancel(id);
+    contract.cancel(id, None, None, None);
 }

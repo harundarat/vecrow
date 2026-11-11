@@ -42,7 +42,7 @@ fn unfunded_escrows_reject_submission() {
     let created = create_default(&mut contract);
     let cancelled = create_default(&mut contract);
     set_context(FREELANCER, T0_MS);
-    contract.cancel(cancelled.clone());
+    contract.cancel(cancelled.clone(), None, None, None);
 
     for id in [created, cancelled] {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

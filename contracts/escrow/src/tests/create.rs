@@ -129,7 +129,7 @@ fn cancelled_escrow_id_cannot_be_reused() {
     let mut contract = new_contract();
     let id = create_default(&mut contract);
     set_context(FREELANCER, T0_MS);
-    contract.cancel(id);
+    contract.cancel(id, None, None, None);
     create_edited(&mut contract, &Wallet::evm(), |_| {});
 }
 
@@ -532,17 +532,17 @@ fn freelancer_cancels_created_escrow() {
     let mut contract = new_contract();
     let id = create_default(&mut contract);
     set_context(FREELANCER, T0_MS);
-    contract.cancel(id.clone());
+    contract.cancel(id.clone(), None, None, None);
     assert_eq!(view(&contract, &id).status, EscrowStatus::Cancelled);
 }
 
 #[test]
-#[should_panic(expected = "only the freelancer can call this method")]
+#[should_panic(expected = "only the freelancer or the approver can cancel")]
 fn stranger_cannot_cancel() {
     let mut contract = new_contract();
     let id = create_default(&mut contract);
     set_context(STRANGER, T0_MS);
-    contract.cancel(id);
+    contract.cancel(id, None, None, None);
 }
 
 #[test]
@@ -551,8 +551,8 @@ fn cancelled_escrow_cannot_be_cancelled_again() {
     let mut contract = new_contract();
     let id = create_default(&mut contract);
     set_context(FREELANCER, T0_MS);
-    contract.cancel(id.clone());
-    contract.cancel(id);
+    contract.cancel(id.clone(), None, None, None);
+    contract.cancel(id, None, None, None);
 }
 
 #[test]
@@ -560,7 +560,7 @@ fn cancelled_escrow_cannot_be_cancelled_again() {
 fn cancel_unknown_escrow_is_rejected() {
     let mut contract = new_contract();
     set_context(FREELANCER, T0_MS);
-    contract.cancel("e42".to_string());
+    contract.cancel("e42".to_string(), None, None, None);
 }
 
 #[test]

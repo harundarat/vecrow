@@ -3,8 +3,8 @@
 
 use crate::events::VecrowEvent;
 use crate::signature::{
-    ApproverKey, EscrowTerms, FreelancerSignature, parse_near_public_key, terms_message,
-    terms_nonce, verify_nep413,
+    Action, ApproverKey, EscrowTerms, FreelancerSignature, action_message, parse_near_public_key,
+    parse_nonce, terms_message, terms_nonce, verify_nep413,
 };
 use crate::split::validate_split;
 use crate::*;
@@ -125,18 +125,50 @@ impl VecrowEscrow {
         .emit();
     }
 
-    /// Cancels an escrow that is not funded yet (`Created`). Only the
-    /// freelancer can cancel.
-    pub fn cancel(&mut self, escrow_id: String) {
+    /// Cancels an escrow that is not funded yet (`Created`), R-01. Either the
+    /// freelancer calls it (via the relayer; checked with the predecessor),
+    /// or anyone forwards a cancellation signed by the approver: `nonce`,
+    /// `deadline_ms` and `signature` over `signature::action_message(cancel)`,
+    /// with the same nonce and deadline rules as approvals. Anyone else is
+    /// rejected.
+    pub fn cancel(
+        &mut self,
+        escrow_id: String,
+        nonce: Option<String>,
+        deadline_ms: Option<u64>,
+        signature: Option<String>,
+    ) {
         let mut escrow = self.load_escrow(&escrow_id);
-        require_freelancer(&escrow);
         require!(
             escrow.status == EscrowStatus::Created,
             "only an unfunded escrow can be cancelled"
         );
+        let by = if env::predecessor_account_id() == escrow.freelancer {
+            "freelancer"
+        } else {
+            let (Some(nonce), Some(deadline_ms), Some(signature)) = (nonce, deadline_ms, signature)
+            else {
+                env::panic_str("only the freelancer or the approver can cancel")
+            };
+            let nonce = parse_nonce(&nonce).unwrap_or_else(|err| env::panic_str(err));
+            let message = action_message(
+                Action::Cancel,
+                &env::current_account_id(),
+                &escrow_id,
+                None,
+                &nonce,
+                deadline_ms,
+            );
+            self.accept_signed_action(&escrow.approver, &message, &nonce, deadline_ms, &signature);
+            "approver"
+        };
         escrow.status = EscrowStatus::Cancelled;
         self.save_escrow(&escrow_id, escrow);
-        VecrowEvent::EscrowCancelled { escrow_id }.emit();
+        VecrowEvent::EscrowCancelled {
+            escrow_id,
+            by: by.to_string(),
+        }
+        .emit();
     }
 }
 

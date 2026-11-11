@@ -119,22 +119,63 @@ async fn invalid_or_changed_terms_are_rejected() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn freelancer_cancels_before_funding() -> anyhow::Result<()> {
+async fn freelancer_or_approver_cancels_before_funding() -> anyhow::Result<()> {
     let env = setup().await?;
-    let id = env.create_escrow_for(&Wallet::solana()).await?;
+    let wallet = Wallet::evm();
+    let by_freelancer = env.create_escrow_for(&wallet).await?;
+    let by_approver = env.create_escrow_for(&wallet).await?;
 
     // Neither a stranger nor the relayer can cancel on its own.
     for caller in [&env.member, &env.relayer] {
         assert_failure(
-            env.call(caller, "cancel", json!({ "escrow_id": id }))
+            env.call(caller, "cancel", json!({ "escrow_id": by_freelancer }))
                 .await?,
-            "only the freelancer can call this method",
+            "only the freelancer or the approver can cancel",
         );
     }
 
-    env.call(&env.freelancer, "cancel", json!({ "escrow_id": id }))
-        .await?
-        .into_result()?;
-    assert_eq!(env.status(&id).await?, "Cancelled");
+    // The freelancer cancels as the predecessor.
+    env.call(
+        &env.freelancer,
+        "cancel",
+        json!({ "escrow_id": by_freelancer }),
+    )
+    .await?
+    .into_result()?;
+    assert_eq!(env.status(&by_freelancer).await?, "Cancelled");
+
+    // The approver signs a cancellation and the relayer forwards it; a
+    // signature from another wallet is rejected.
+    let deadline = env.deadline_ms().await?;
+    let other = Wallet::Evm(wallet_fixtures::EvmWallet::new(77));
+    assert_failure(
+        env.call(
+            &env.relayer,
+            "cancel",
+            env.cancel_args(&by_approver, &other, 1, deadline),
+        )
+        .await?,
+        "invalid signature",
+    );
+    env.call(
+        &env.relayer,
+        "cancel",
+        env.cancel_args(&by_approver, &wallet, 1, deadline),
+    )
+    .await?
+    .into_result()?;
+    assert_eq!(env.status(&by_approver).await?, "Cancelled");
+
+    // A funded escrow cannot be cancelled by the approver either.
+    let funded = env.funded_escrow(&wallet).await?;
+    assert_failure(
+        env.call(
+            &env.relayer,
+            "cancel",
+            env.cancel_args(&funded, &wallet, 2, deadline),
+        )
+        .await?,
+        "only an unfunded escrow can be cancelled",
+    );
     Ok(())
 }

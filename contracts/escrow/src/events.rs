@@ -18,7 +18,11 @@ pub enum VecrowEvent {
         total: U128,
     },
     #[event_version("1.0.0")]
-    EscrowCancelled { escrow_id: String },
+    EscrowCancelled {
+        escrow_id: String,
+        /// `freelancer` or `approver`.
+        by: String,
+    },
     #[event_version("1.0.0")]
     EscrowFunded {
         escrow_id: String,

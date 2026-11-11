@@ -4,6 +4,7 @@
 
 mod approve;
 mod auto_release;
+mod cancel;
 mod create;
 mod funding;
 mod payout;
@@ -477,4 +478,38 @@ pub fn auto_release(contract: &mut VecrowEscrow, escrow_id: &str, milestone: u32
 pub fn refund(contract: &mut VecrowEscrow, caller: &str, escrow_id: &str, milestone: Option<u32>) {
     set_context(caller, T0_MS);
     contract.refund_unsubmitted(escrow_id.to_string(), milestone);
+}
+
+/// A cancellation signed by `wallet`: `(nonce hex, signature)`.
+pub fn sign_cancel(
+    wallet: &Wallet,
+    escrow_id: &str,
+    nonce: u8,
+    deadline_ms: u64,
+) -> (String, String) {
+    let nonce = wallet_fixtures::nonce(nonce);
+    let message = wallet_fixtures::cancel_message(CONTRACT, escrow_id, &nonce, deadline_ms);
+    (
+        wallet_fixtures::nonce_hex(&nonce),
+        wallet.sign(&message, &nonce),
+    )
+}
+
+/// `caller` forwards a cancellation of `escrow_id` signed by `wallet`.
+pub fn cancel_signed(
+    contract: &mut VecrowEscrow,
+    caller: &str,
+    escrow_id: &str,
+    wallet: &Wallet,
+    nonce: u8,
+    now_ms: u64,
+) {
+    let (nonce, signature) = sign_cancel(wallet, escrow_id, nonce, DEADLINE_MS);
+    set_context(caller, now_ms);
+    contract.cancel(
+        escrow_id.to_string(),
+        Some(nonce),
+        Some(DEADLINE_MS),
+        Some(signature),
+    );
 }
