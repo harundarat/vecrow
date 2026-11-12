@@ -46,9 +46,38 @@ test-integration: ## Run unit + integration tests (needs `make compose-up`)
 	go test -race -count=1 -tags=integration ./...
 
 .PHONY: vet
-vet: ## Run go vet (including integration tests)
+vet: ## Run go vet (including integration and end-to-end tests)
 	go vet ./...
 	go vet -tags=integration ./...
+	go vet -tags=e2e ./...
+
+# The contracts and the nearcore sandbox (version and fd-limit shim) of
+# contracts/Makefile.
+CONTRACTS_DIR    := $(abspath ../contracts)
+SANDBOX_VERSION  := $(shell sed -n 's/^SANDBOX_VERSION := //p' $(CONTRACTS_DIR)/Makefile)
+SANDBOX_SHIM_DIR := $(CONTRACTS_DIR)/target/sandbox-shim
+
+# Runs the api and the worker against a local NEAR sandbox with the escrow
+# and mock-ft contracts built from contracts/. NEAR_SANDBOX_BIN_PATH picks
+# another sandbox binary; otherwise the version above is downloaded and, where
+# the open-file hard limit is below the 65,535 nearcore needs, run through
+# scripts/sandbox-fd-shim.sh.
+.PHONY: test-e2e
+test-e2e: ## Run end-to-end tests on a NEAR sandbox (needs `make compose-up`, goose and cargo-near)
+	$(MAKE) -C $(CONTRACTS_DIR) build
+	@bin="$${NEAR_SANDBOX_BIN_PATH:-}"; \
+	if [ -z "$$bin" ]; then \
+		shim=$$($(CONTRACTS_DIR)/scripts/sandbox-fd-shim.sh $(SANDBOX_VERSION) $(SANDBOX_SHIM_DIR)) || exit 1; \
+		hard=$$(ulimit -H -n); \
+		if [ "$$hard" != unlimited ] && [ "$$hard" -lt 65535 ]; then \
+			echo "open-file hard limit $$hard < 65535: running the sandbox through scripts/sandbox-fd-shim.sh"; \
+			bin=$$shim; \
+		else \
+			bin=$(SANDBOX_SHIM_DIR)/near-sandbox-$(SANDBOX_VERSION); \
+		fi; \
+	fi; \
+	NEAR_SANDBOX_BIN_PATH=$$bin VECROW_WASM_DIR=$(CONTRACTS_DIR)/target/near GOOSE=$(GOOSE) \
+		go test -count=1 -tags=e2e -timeout 20m -v ./e2e/...
 
 .PHONY: fmt
 fmt: ## Format the code
