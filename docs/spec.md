@@ -103,23 +103,23 @@ after the link is shared (the creator cancels and creates a new escrow instead).
 | R-04 | Approver and refund account | Contract | Implemented | [create.rs](../contracts/escrow/src/create.rs), [signature.rs](../contracts/escrow/src/signature.rs) | [tests/create.rs](../contracts/escrow/src/tests/create.rs), [tests/signature.rs](../contracts/escrow/src/tests/signature.rs), [sandbox/create_cancel.rs](../contracts/integration-tests/tests/create_cancel.rs) |
 | R-05 | Submit milestone | Contract | Implemented | [milestones.rs](../contracts/escrow/src/milestones.rs) | [tests/submit.rs](../contracts/escrow/src/tests/submit.rs), [tests/revision.rs](../contracts/escrow/src/tests/revision.rs), [sandbox/zero_balance.rs](../contracts/integration-tests/tests/zero_balance.rs) |
 | R-06 | Signed approval (NEAR, EVM, Solana) | Contract | Partial | [milestones.rs](../contracts/escrow/src/milestones.rs), [signature.rs](../contracts/escrow/src/signature.rs) | [tests/approve.rs](../contracts/escrow/src/tests/approve.rs), [tests/signature.rs](../contracts/escrow/src/tests/signature.rs), [sandbox/approve.rs](../contracts/integration-tests/tests/approve.rs) |
-| R-07 | Auto-release after 14 days | Contract + job | Partial | [milestones.rs](../contracts/escrow/src/milestones.rs) | [tests/auto_release.rs](../contracts/escrow/src/tests/auto_release.rs), [sandbox/auto_release.rs](../contracts/integration-tests/tests/auto_release.rs) |
-| R-08 | Cross-chain funding via 1Click | Backend | Planned | | |
-| R-09 | Gasless meta transaction relayer | Backend | Planned | | |
+| R-07 | Auto-release after 14 days | Contract + job | Implemented | [milestones.rs](../contracts/escrow/src/milestones.rs), [escrow/jobs.go](../backend/internal/usecase/escrow/jobs.go), [jobs/jobs.go](../backend/internal/usecase/jobs/jobs.go) | [tests/auto_release.rs](../contracts/escrow/src/tests/auto_release.rs), [sandbox/auto_release.rs](../contracts/integration-tests/tests/auto_release.rs), [escrow_test.go](../backend/internal/usecase/escrow/escrow_test.go), [jobs_test.go](../backend/internal/usecase/jobs/jobs_test.go), [jobs_integration_test.go](../backend/internal/delivery/worker/jobs_integration_test.go), [e2e](../backend/e2e/escrow_e2e_test.go) |
+| R-08 | Cross-chain funding via 1Click | Backend | Implemented | [funding.go](../backend/internal/usecase/funding/funding.go), [oneclick](../backend/internal/infrastructure/oneclick/), [handler/funding.go](../backend/internal/delivery/http/handler/funding.go) | [funding_test.go](../backend/internal/usecase/funding/funding_test.go), [oneclick/client_test.go](../backend/internal/infrastructure/oneclick/client_test.go), [funding_repository_integration_test.go](../backend/internal/repository/funding_repository_integration_test.go), [escrow_routes_test.go](../backend/internal/delivery/http/escrow_routes_test.go), [e2e](../backend/e2e/escrow_e2e_test.go) |
+| R-09 | Gasless meta transaction relayer | Backend | Implemented | [relay.go](../backend/internal/usecase/escrow/relay.go), [near_escrow_contract.go](../backend/internal/repository/near_escrow_contract.go), [nearrpc](../backend/internal/infrastructure/nearrpc/), [neartx](../backend/internal/neartx/) | [escrow_test.go](../backend/internal/usecase/escrow/escrow_test.go), [near_escrow_contract_test.go](../backend/internal/repository/near_escrow_contract_test.go), [signer_test.go](../backend/internal/infrastructure/nearrpc/signer_test.go), [neartx_test.go](../backend/internal/neartx/neartx_test.go), [e2e](../backend/e2e/escrow_e2e_test.go) |
 | R-10 | Client escrow page | Frontend | Planned | | |
 | R-11 | Freelancer dashboard | Frontend | Planned | | |
 | R-12 | CSV export | Backend | Planned | | |
 | R-13 | Wallet sign-up and login | Backend + frontend | Partial | [login.go](../backend/internal/usecase/auth/login.go), [walletsig](../backend/internal/walletsig/) | [login_test.go](../backend/internal/usecase/auth/login_test.go), [walletsig_test.go](../backend/internal/walletsig/walletsig_test.go) |
 | R-14 | Profile, multiple wallets, email | Backend + frontend | Partial | [account.go](../backend/internal/usecase/auth/account.go) | [account_test.go](../backend/internal/usecase/auth/account_test.go), [account_repository_integration_test.go](../backend/internal/repository/account_repository_integration_test.go) |
 | R-15 | Invite the other party | Backend | Planned | | |
-| R-16 | "My escrows" page | Backend + frontend | Planned | | |
+| R-16 | "My escrows" page | Backend + frontend | Partial | [service.go](../backend/internal/usecase/escrow/service.go), [escrow_repository.go](../backend/internal/repository/escrow_repository.go) | [escrow_repository_integration_test.go](../backend/internal/repository/escrow_repository_integration_test.go), [escrow_routes_test.go](../backend/internal/delivery/http/escrow_routes_test.go), [e2e](../backend/e2e/escrow_e2e_test.go) |
 | R-17 | Request milestone revision | Contract | Implemented | [milestones.rs](../contracts/escrow/src/milestones.rs) | [tests/revision.rs](../contracts/escrow/src/tests/revision.rs), [tests/auto_release.rs](../contracts/escrow/src/tests/auto_release.rs), [sandbox/revision.rs](../contracts/integration-tests/tests/revision.rs), [sandbox/auto_release.rs](../contracts/integration-tests/tests/auto_release.rs) |
 | R-18 | Refund by freelancer | Contract | Implemented | [refund.rs](../contracts/escrow/src/refund.rs) | [tests/refund.rs](../contracts/escrow/src/tests/refund.rs), [sandbox/refund.rs](../contracts/integration-tests/tests/refund.rs), [sandbox/retry.rs](../contracts/integration-tests/tests/retry.rs) |
 | R-19 | 0.5% platform fee | Contract | Implemented | [split.rs](../contracts/escrow/src/split.rs), [payout.rs](../contracts/escrow/src/payout.rs), [create.rs](../contracts/escrow/src/create.rs) | [tests/split.rs](../contracts/escrow/src/tests/split.rs), [tests/approve.rs](../contracts/escrow/src/tests/approve.rs), [tests/create.rs](../contracts/escrow/src/tests/create.rs), [sandbox/approve.rs](../contracts/integration-tests/tests/approve.rs), [sandbox/refund.rs](../contracts/integration-tests/tests/refund.rs), [sandbox/create_cancel.rs](../contracts/integration-tests/tests/create_cancel.rs) |
-| R-20 | Storage registration and payout retry | Contract + backend | Partial | [payout.rs](../contracts/escrow/src/payout.rs) | [tests/payout.rs](../contracts/escrow/src/tests/payout.rs), [tests/retry.rs](../contracts/escrow/src/tests/retry.rs), [sandbox/approve.rs](../contracts/integration-tests/tests/approve.rs), [sandbox/retry.rs](../contracts/integration-tests/tests/retry.rs), [sandbox/zero_balance.rs](../contracts/integration-tests/tests/zero_balance.rs) |
-| R-21 | Join without an account (guest token) | Backend + frontend | Planned | | |
+| R-20 | Storage registration and payout retry | Contract + backend | Partial | [payout.rs](../contracts/escrow/src/payout.rs), [escrow/jobs.go](../backend/internal/usecase/escrow/jobs.go), [near_escrow_contract.go](../backend/internal/repository/near_escrow_contract.go) | [tests/payout.rs](../contracts/escrow/src/tests/payout.rs), [tests/retry.rs](../contracts/escrow/src/tests/retry.rs), [sandbox/approve.rs](../contracts/integration-tests/tests/approve.rs), [sandbox/retry.rs](../contracts/integration-tests/tests/retry.rs), [sandbox/zero_balance.rs](../contracts/integration-tests/tests/zero_balance.rs), [escrow_test.go](../backend/internal/usecase/escrow/escrow_test.go), [near_escrow_contract_test.go](../backend/internal/repository/near_escrow_contract_test.go), [e2e](../backend/e2e/escrow_e2e_test.go) |
+| R-21 | Join without an account (guest token) | Backend + frontend | Partial | [guest.go](../backend/internal/usecase/auth/guest.go), [proposal.go](../backend/internal/usecase/escrow/proposal.go), [requester.go](../backend/internal/delivery/http/middleware/requester.go) | [guest_test.go](../backend/internal/usecase/auth/guest_test.go), [guest_token_store_test.go](../backend/internal/repository/guest_token_store_test.go), [escrow_test.go](../backend/internal/usecase/escrow/escrow_test.go), [funding_test.go](../backend/internal/usecase/funding/funding_test.go), [escrow_routes_test.go](../backend/internal/delivery/http/escrow_routes_test.go), [e2e](../backend/e2e/escrow_e2e_test.go) |
 | R-22 | Account recovery via email OTP | Backend + frontend | Planned | | |
-| R-23 | Escrow proposal and creator approval | Backend + frontend | Planned | | |
+| R-23 | Escrow proposal and creator approval | Backend + frontend | Partial | [proposal.go](../backend/internal/usecase/escrow/proposal.go), [escrow/jobs.go](../backend/internal/usecase/escrow/jobs.go), [escrow_message.go](../backend/internal/domain/escrow_message.go), [escrow_repository.go](../backend/internal/repository/escrow_repository.go), [handler/escrow.go](../backend/internal/delivery/http/handler/escrow.go) | [escrow_test.go (domain)](../backend/internal/domain/escrow_test.go), [escrow_test.go](../backend/internal/usecase/escrow/escrow_test.go), [escrow_repository_integration_test.go](../backend/internal/repository/escrow_repository_integration_test.go), [escrow_routes_test.go](../backend/internal/delivery/http/escrow_routes_test.go), [e2e](../backend/e2e/escrow_e2e_test.go) |
 
 ## 5. Requirements and acceptance criteria
 
@@ -228,8 +228,9 @@ submission. A backend job calls it automatically.
 - [x] Rejected for milestones in `RevisionRequested`.
 - [x] The window is configurable at deploy time (shortened for the demo).
 
-*Partial:* `auto_release` is done in the contract; the backend job that calls it is not
-built yet. The window is copied into each escrow by `create_escrow` (D-15).
+The window is copied into each escrow by `create_escrow` (D-15). The backend job finds
+`Submitted` milestones whose window has ended and calls `auto_release` through the
+relayer (architecture.md §7.3, D-24); the end-to-end test runs it on a local sandbox.
 
 #### R-17 — Request milestone revision
 
@@ -295,15 +296,18 @@ sending and restored if the transfer fails again.
 - [x] A transfer to an unregistered account is recorded as pending, not lost.
 - [x] `retry_payout` after registration sends the exact pending amount.
 - [x] Two consecutive `retry_payout` calls do not pay twice.
-- [ ] The backend registers the split recipients and `refund_account` before it calls `create_escrow`.
+- [x] The backend registers the split recipients and `refund_account` before it calls `create_escrow`.
 - [ ] Pending payouts appear in `GET /escrows/:id` and in the CSV export.
 - [x] Freelancer and client still need a NEAR balance of 0.
 
 *Partial:* the contract side is done: pending payouts are returned by `get_escrow`, and a
 sandbox test runs the whole flow with a freelancer, a team member and a client holding
 0 NEAR, both parties signing the terms with their wallets and the freelancer acting
-through NEP-366 meta transactions (D-19). The backend registration, the retry job,
-`GET /escrows/:id` and the CSV export are not built yet.
+through NEP-366 meta transactions (D-19). The backend registers storage before
+`create_escrow` and before each `retry_payout`, the retry job runs for every pending
+payout, and `GET /escrows/:id` shows the pending payouts (D-23, D-24, D-25); the
+end-to-end test unregisters a split member, then sees the job register them again and
+pay. The CSV export (R-12) is not built yet.
 
 ### Backend
 
@@ -314,17 +318,25 @@ contract and `customRecipientMsg` = `escrow_id`. Only available to the approver
 wallet, and only once the escrow is `Created` on-chain. The list of supported tokens
 comes from 1Click.
 
-- [ ] The deposit address is shown only to the approver, proven by a guest token (R-21) or a session that includes the approver wallet.
-- [ ] A quote for an escrow that is not `Created` is rejected.
-- [ ] Funding status is tracked until `SUCCESS`.
+- [x] The deposit address is shown only to the approver, proven by a guest token (R-21) or a session that includes the approver wallet.
+- [x] A quote for an escrow that is not `Created` is rejected.
+- [x] Funding status is tracked until `SUCCESS`.
+
+The tests use a fake 1Click server shaped like its documentation; the real API is not
+called. The funding status is `SUCCESS` once the contract reports the escrow `Funded`
+(D-25). Whether 1Click delivers with `customRecipientMsg` is still to be confirmed on
+mainnet (D-09).
 
 #### R-09 — Gasless relayer
 
 A meta transaction relayer pays gas only for calls to the Vecrow contract, including
 `create_escrow` for approved escrows, and only forwards signed payloads.
 
-- [ ] The full flow, from creating the escrow on-chain to the last payout, works with a NEAR balance of 0.
-- [ ] Calls to any other contract are rejected.
+- [x] The full flow, from creating the escrow on-chain to the last payout, works with a NEAR balance of 0.
+- [x] Calls to any other contract are rejected.
+
+Delegate actions are also limited to one call of the endpoint's method with no deposit
+and capped gas, from the escrow's freelancer (D-23).
 
 #### R-12 — CSV export
 
@@ -380,9 +392,14 @@ to it, or one of its wallets is the freelancer, the approver, or a split recipie
 Escrows that are not on-chain yet (`Open`, `PendingApproval`, `Approved`) are
 included. Filterable by status.
 
-- [ ] The list matches role and status.
-- [ ] An escrow appears under its creator's role as soon as it is created.
-- [ ] The endpoint requires a valid session.
+- [x] The list matches role and status.
+- [x] An escrow appears under its creator's role as soon as it is created.
+- [x] The endpoint requires a valid session.
+
+*Partial:* `GET /me/escrows` lists escrows by creator role and by the account's wallets
+(freelancer, approver, split member other than the freelancer), at most 200 (D-21).
+Invitations (R-15) do not exist yet, so an invited account does not see an escrow
+until one of its wallets is in it; the frontend is not built.
 
 #### R-21 — Join without an account (guest token)
 
@@ -394,11 +411,15 @@ same wallet. Approvals, revisions, and the escrow terms are still verified by th
 contract from signatures, never from the token. After joining, the other party is
 offered "Save to account" via R-13 login with the same wallet.
 
-- [ ] A signed submission returns a guest token.
-- [ ] A token used for another escrow or another wallet is rejected.
-- [ ] An expired token is rejected and can be renewed with a signature.
-- [ ] A quote without a guest token or session for the approver wallet is rejected.
-- [ ] Logging in with the submitting wallet shows the escrow under that party's role.
+- [x] A signed submission returns a guest token.
+- [x] A token used for another escrow or another wallet is rejected.
+- [x] An expired token is rejected and can be renewed with a signature.
+- [x] A quote without a guest token or session for the approver wallet is rejected.
+- [x] Logging in with the submitting wallet shows the escrow under that party's role.
+
+*Partial:* the backend is done: the token is sent in `X-Guest-Token` and renewed with
+`POST /escrows/:id/guest-token` (D-22). The "Save to account" step is frontend work and
+is not built.
 
 #### R-22 — Account recovery via email OTP
 
@@ -447,14 +468,18 @@ The terms cannot be edited once the escrow is created; the creator cancels it an
 creates a new one. Until the escrow is on-chain, only the creator can cancel it, and
 nothing is sent to the contract.
 
-- [ ] A freelancer and a client can each create an escrow; it is `Open` and has a link to share.
-- [ ] A creator address that is not a wallet of the creator's account is rejected.
-- [ ] A submission with an invalid signature, or that breaks R-03 or R-04, is rejected.
-- [ ] A second submission while `PendingApproval` is rejected.
-- [ ] Only the creator can approve or reject, and approval requires the creator's signature over the same terms.
-- [ ] Rejecting the submission, or letting its deadline pass, returns the escrow to `Open` and discards the submission.
-- [ ] Nothing is sent to the contract before approval; after approval, `get_escrow` returns the signed terms with status `Created`.
-- [ ] Both directions work: the freelancer creates and the client joins, and the client creates and the freelancer joins.
+- [x] A freelancer and a client can each create an escrow; it is `Open` and has a link to share.
+- [x] A creator address that is not a wallet of the creator's account is rejected.
+- [x] A submission with an invalid signature, or that breaks R-03 or R-04, is rejected.
+- [x] A second submission while `PendingApproval` is rejected.
+- [x] Only the creator can approve or reject, and approval requires the creator's signature over the same terms.
+- [x] Rejecting the submission, or letting its deadline pass, returns the escrow to `Open` and discards the submission.
+- [x] Nothing is sent to the contract before approval; after approval, `get_escrow` returns the signed terms with status `Created`.
+- [x] Both directions work: the freelancer creates and the client joins, and the client creates and the freelancer joins.
+
+*Partial:* the backend is done (architecture.md §6.1, §7.3; D-21); both directions run
+end to end against the contract on a local sandbox. The frontend is not built, and the
+optional invitation of `POST /escrows` belongs to R-15.
 
 ### Frontend
 
@@ -559,7 +584,7 @@ stateDiagram-v2
 | `GET /me`, `PATCH /me` | View and edit profile | R-13, R-14 |
 | `POST /me/email/verify` | Verify email with OTP | R-14 |
 | `POST /me/wallets`, `DELETE /me/wallets/:id` | Link and unlink wallets | R-14, R-22 |
-| `GET /me/escrows?role=freelancer\|client\|member` | Escrows by role | R-16 |
+| `GET /me/escrows?role=freelancer\|client\|member&status=…` | Escrows by role, optionally by status | R-16 |
 
 `create_escrow` (R-23), `auto_release` (R-07), and `retry_payout` (R-20) have no
 endpoint; backend jobs call them directly on the contract.

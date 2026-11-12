@@ -66,7 +66,7 @@ flowchart TB
 | Layer | Technology | Notes |
 | --- | --- | --- |
 | Contract | Rust, near-sdk, cargo-near, near-workspaces | Unit and integration tests run against a mock NEP-141 token on a local sandbox / testnet |
-| Backend | Go (Gin), PostgreSQL, Redis, RabbitMQ | 1Click is called over its REST API; NEAR transactions (relayer, `storage_deposit`, jobs) are sent over NEAR JSON-RPC. Jobs (escrow creation, funding watcher, auto-release, payout retry) are queued in RabbitMQ and processed by workers. Redis holds short-lived state with a TTL (login nonces, sessions, OTP rate limits). Layering in section 7.4 |
+| Backend | Go (Gin), PostgreSQL, Redis, RabbitMQ | 1Click is called over its REST API; NEAR transactions (relayer, `storage_deposit`, jobs) are sent over NEAR JSON-RPC. Jobs (escrow creation, funding watcher, auto-release, payout retry, sync) are queued in RabbitMQ and processed by workers. Redis holds short-lived state with a TTL (login nonces, sessions, guest tokens, transaction nonces, job leases and locks). Layering in section 7.4 |
 | Frontend | React, Vite, NEAR Wallet Selector | Single-page app that talks only to the backend API. EVM and Solana wallets are only needed for signing; paying is a transfer to a deposit address from any wallet |
 
 ## 4. Money flow
@@ -442,6 +442,11 @@ sequenceDiagram
     B-->>C: SUCCESS, escrow Funded
 ```
 
+The funding watcher job polls 1Click for every open quote (section 7.3);
+`GET /escrows/:id/funding` returns the stored status and asks 1Click itself only when
+that status is older than `ONECLICK_REFRESH_AFTER`. The status is `SUCCESS` once
+`get_escrow` reports the escrow `Funded`, whatever 1Click says (D-25).
+
 If the mainnet test shows `customRecipientMsg` is not reliable, 1Click delivers to a
 backend account instead, and the backend calls `ft_transfer_call` itself (D-09).
 
@@ -466,6 +471,27 @@ sequenceDiagram
 The relayer only submits transactions whose receiver is the Vecrow contract. It does
 not sign approvals or terms, and cannot change a payload without invalidating the
 signature.
+
+The relayer is a NEAR account of the backend (`RELAYER_ACCOUNT_ID`, key in
+`RELAYER_PRIVATE_KEY`); it signs every transaction to the contract and pays its gas
+(D-23):
+
+| Endpoint or job | Proof | Sent as |
+| --- | --- | --- |
+| `POST /escrows/:id/milestones/:n/submit` | Freelancer's NEP-366 delegate action calling `submit_milestone` | `Delegate` action from the relayer |
+| `POST /escrows/:id/refund` | Freelancer's delegate action calling `refund_unsubmitted` | `Delegate` action |
+| `POST /escrows/:id/cancel` (freelancer) | Freelancer's delegate action calling `cancel` | `Delegate` action |
+| `POST /escrows/:id/milestones/:n/approve`, `…/revision`, `POST /escrows/:id/cancel` (approver) | Approver's signed payload (section 5.3) | Function call from the relayer with the payload and signature |
+| Escrow creation job | Both signatures over the terms | `create_escrow` from the relayer |
+| Auto-release and payout retry jobs | None (anyone may call) | `auto_release`, `retry_payout` from the relayer |
+
+A delegate action is relayed only if its receiver is the contract, it holds exactly
+one function call to the method of the endpoint, with no deposit and at most
+`RELAYER_MAX_GAS_TGAS` of gas, its sender is the escrow's freelancer, its arguments name
+this escrow (and milestone) and nothing else, and its signature is valid. Anything else
+is rejected before a transaction is sent. Approver signatures are also checked by the
+backend before sending, so an invalid one costs no gas. `storage_deposit` is paid by a
+second account (`STORAGE_ACCOUNT_ID`), used only by the worker.
 
 ### 6.4 Payout with retry
 
@@ -515,19 +541,49 @@ funding status, and an index of payouts and transaction hashes for the dashboard
 CSV export. Once an escrow is on-chain, the contract is the source of truth for its
 balances and statuses; the backend reads them from the contract.
 
+Tables (migrations in `backend/migrations`, queries in
+`backend/internal/repository/queries`, generated with sqlc):
+
+| Table | Holds |
+| --- | --- |
+| `accounts`, `wallets` | Accounts and their linked wallets, one account per wallet (section 7.5) |
+| `escrows` | One row per escrow: creator account and role, status, `fee_bps`, the creator's own details, and, once on-chain, a snapshot of `get_escrow` (review window, balance, timestamps) with the block height it was read at |
+| `escrow_milestones` | Amounts as proposed, then each milestone's on-chain status, submission time and revision count; finds milestones due for `auto_release` |
+| `escrow_submissions` | The other party's submission: the terms, the exact message signed, its deadline, the submitting wallet, both signatures and keys, and how it ended (`pending`, `approved`, `created`, `rejected`, `expired`, `failed`, `cancelled`). At most one is active per escrow |
+| `escrow_parties` | Wallets with a role in the escrow (freelancer, client, member), rewritten from the creator's details and the active submission; drives "My escrows" (R-16) |
+| `escrow_pending_payouts` | Pending payouts from the latest `get_escrow`; finds payouts due for `retry_payout` |
+| `escrow_transactions` | Every transaction the backend sent for an escrow: hash, method, signer (who paid gas), sender (who the call acts as), receiver, result |
+| `escrow_events` | NEP-297 events (section 5.5) the contract logged in those transactions |
+| `revision_notes` | The reason given with each revision request, with its transaction |
+| `funding_quotes` | 1Click quotes: deposit address, amounts, deadline, the 1Click status and the status shown, whether the watcher still polls it |
+
+The status of an escrow is `Open`, `PendingApproval` or `Approved` while it exists only
+in PostgreSQL; from `Created` on it mirrors the contract. Redis holds what expires:
+login nonces (`auth:nonce:`), sessions (`auth:session:`), guest tokens (`auth:guest:`),
+transaction nonces claimed for the backend keys (`near:nonce:`), and job leases and
+escrow locks (`jobs:`). Tokens are stored only as SHA-256 hashes.
+
 ### 7.3 Jobs
 
-| Job | Trigger | Action |
-| --- | --- | --- |
-| Escrow creation | The creator approved (`Approved`) | Ensures storage registration, then calls `create_escrow` with both signatures; marks the escrow `Created`, or returns it to `Open` if the contract rejects the terms |
-| Funding watcher | After a quote | Polls 1Click until `SUCCESS` or `REFUNDED` |
-| Auto-release | Review window ended for a `Submitted` milestone | Calls `auto_release` |
-| Payout retry | `pending_payout` is non-empty | Ensures registration, then calls `retry_payout` |
+| Job | Topic | Trigger | Action |
+| --- | --- | --- | --- |
+| Escrow creation | `escrow.create` | The creator approved (`Approved`) | Reads `get_escrow`; if absent, checks the deadline and the freelancer's key, registers storage for the split recipients and `refund_account`, then calls `create_escrow` with both signatures. Marks the escrow `Created`, or returns it to `Open` if the contract rejects the terms or they expired (after `ESCROW_EXPIRY_GRACE`) |
+| Funding watcher | `funding.check` | A quote is still watched, every `JOB_FUNDING_INTERVAL` | Reads the 1Click status; stops at `SUCCESS`, `REFUNDED` or `FAILED`, or `ONECLICK_WATCH_GRACE` after the quote's deadline. On `SUCCESS` it refreshes the escrow from the contract |
+| Auto-release | `escrow.auto_release` | Review window ended for a `Submitted` milestone | Reads `get_escrow`, then calls `auto_release` if the milestone is still due |
+| Payout retry | `escrow.retry_payout` | A pending payout | Reads `get_escrow`, registers the account if needed, then calls `retry_payout` |
+| Sync | `escrow.sync` | An escrow on-chain that can still change (`Created`, `Funded`, or with pending payouts), every `JOB_SYNC_INTERVAL` | Refreshes the snapshot from `get_escrow` |
 
-A scheduler in the backend periodically finds due work in PostgreSQL (approved escrows
-not yet on-chain, quotes still pending, milestones whose review window has ended,
-pending payouts) and publishes a message per item to RabbitMQ. Workers consume the
-messages and call 1Click or the contract. Failed messages are retried with a delay:
+A scheduler in the worker (`SCHEDULER_INTERVAL`) finds due work in PostgreSQL
+(approved escrows not yet on-chain, quotes still watched, milestones whose review
+window has ended, pending payouts, escrows to sync), at most `JOB_BATCH_SIZE` per kind,
+and publishes a message per item to RabbitMQ. Workers consume the messages and call
+1Click or the contract. Before publishing, the scheduler takes a Redis lease
+`jobs:lease:<topic>:<item>` for `JOB_LEASE_TTL`; the job frees it when it completes, so
+an item is not queued again while its message is still in flight or being retried. Jobs
+that send a transaction also hold `jobs:lock:escrow:<id>` while they run, so two
+transactions for the same escrow are never in flight at once; a job that finds the lock
+held is retried later (D-24). A job for an escrow or quote that no longer exists is
+dropped. Failed messages are retried with a delay:
 each topic has a retry queue whose TTL is `QUEUE_RETRY_DELAY`. After
 `QUEUE_MAX_RETRIES` retries, or on an error marked permanent (such as a malformed
 payload), the message moves to the topic's dead-letter queue.
@@ -544,11 +600,17 @@ timeout, the message is settled the same way. Changing `QUEUE_RETRY_DELAY` for a
 existing topic requires deleting `T.retry` first, because RabbitMQ rejects re-declaring
 a queue with different arguments.
 
-All jobs are idempotent: running one twice has the same effect as running it once,
-because the contract rejects calls that are not valid for the current state. When
+All jobs are idempotent: running one twice has the same effect as running it once.
+Each job reads `get_escrow` before it sends anything and skips work that is already
+done, and the contract rejects calls that are not valid for the current state. When
 `create_escrow` reports that the escrow ID already exists, the creation job reads it
 with `get_escrow` and marks it `Created`. This makes RabbitMQ's at-least-once delivery
 safe.
+
+Every transaction a job or the relayer sends is stored in `escrow_transactions` with the
+NEP-297 events of the contract (`escrow_events`), whether it succeeded or not.
+`GET /escrows/:id` lists them with an explorer link (`NEAR_EXPLORER_TX_URL` + hash), and
+shows the pending payouts of the latest `get_escrow` (D-25).
 
 ### 7.4 Code structure
 
@@ -561,8 +623,14 @@ Dependencies point inward:
 | Use cases | `internal/usecase/...` | Domain, and the ports (interfaces) each use case declares |
 | Repositories | `internal/repository` | Use-case ports, generic infrastructure interfaces |
 | Delivery | `internal/delivery/http` (Gin), `internal/delivery/worker` (queue consumers) | Use cases, through interfaces |
-| Infrastructure | `internal/infrastructure/{database,cache,queue,logger}` | Driver libraries |
+| Infrastructure | `internal/infrastructure/{database,cache,queue,logger,nearrpc,oneclick}` | Driver libraries; `nearrpc` (NEAR JSON-RPC, transaction signing and sending) builds on `internal/neartx` |
+| Codecs | `internal/neartx` (Borsh transactions, delegate actions, keys), `internal/walletsig` (EIP-191, Solana, NEP-413 verification) | Standard library and crypto libraries |
 | Composition root | `internal/bootstrap`, `cmd/api`, `cmd/worker` | Everything; the only place concrete technologies are chosen |
+
+End-to-end tests (`backend/e2e`, build tag `e2e`, `make test-e2e`) run the api and the
+worker as wired by `bootstrap`, against PostgreSQL, Redis and RabbitMQ, a local NEAR
+sandbox with the escrow and mock-ft contracts from `contracts/`, and a fake 1Click
+server; the test plays the 1Click solver by sending the USDC to the contract itself.
 
 Infrastructure packages are named after their role, not their technology.
 `cache.Store`, `queue.Publisher` and `queue.Subscriber` are generic interfaces.

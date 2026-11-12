@@ -166,10 +166,29 @@ make migrate-up     # needs goose: go install github.com/pressly/goose/v3/cmd/go
 make run-api        # http://localhost:8080 — GET /readyz checks the database and cache
 make run-worker     # scheduler + queue consumers
 make test           # unit tests; `make test-integration` also needs `make compose-up`
+make test-e2e       # end-to-end tests on a local NEAR sandbox (see below)
+make vet            # go vet, including the integration and end-to-end tests
 ```
 
-The API also needs `AUTH_DOMAIN` and `NEAR_RPC_URL` (see `.env.example`); wallet login
-for the frontend is described in [architecture.md §7.5](docs/architecture.md#75-wallet-login-r-13-r-14).
+The API and the worker also need `AUTH_DOMAIN`, `NEAR_RPC_URL`, the deployed contracts
+(`ESCROW_CONTRACT_ID`, `ESCROW_FEE_BPS`, `USDC_CONTRACT_ID`), `APP_URL`, and the relayer
+account (`RELAYER_ACCOUNT_ID`, `RELAYER_PRIVATE_KEY`); the worker also needs the storage
+account (`STORAGE_ACCOUNT_ID`, `STORAGE_PRIVATE_KEY`), which pays `storage_deposit`. Both
+are NEAR accounts of the backend with a NEAR balance; their keys come only from the
+environment (D-23). `ONECLICK_API_KEY` is the optional 1Click JWT. Every variable is described in
+`.env.example`. Wallet login for the frontend is described in
+[architecture.md §7.5](docs/architecture.md#75-wallet-login-r-13-r-14), the escrow flow
+in [§6](docs/architecture.md#6-key-flows), and the jobs in
+[§7.3](docs/architecture.md#73-jobs).
+
+`make test-e2e` builds the contracts (`make -C ../contracts build`, needs cargo-near),
+starts the nearcore sandbox version pinned in `contracts/Makefile` (through the
+open-file-limit shim when needed, or `NEAR_SANDBOX_BIN_PATH`), deploys the escrow and
+mock-ft contracts, and runs the API and the worker against PostgreSQL, Redis and
+RabbitMQ from `make compose-up` and a fake 1Click server. Each run uses a fresh
+database next to `DATABASE_URL` and needs goose on `PATH`. It covers both directions
+(freelancer or client creates) with freelancer and client holding 0 NEAR: creation
+on-chain, funding, submit, revision, approval, payout retry, auto-release and refund.
 
 `make help` lists every target. After adding or changing a query in
 `internal/repository/queries/`, run `make sqlc`
