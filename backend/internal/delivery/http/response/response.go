@@ -22,6 +22,7 @@ const (
 	CodeMethodNotAllowed = "method_not_allowed"
 	CodePayloadTooLarge  = "payload_too_large"
 	CodeTooManyRequests  = "too_many_requests"
+	CodeUnavailable      = "unavailable"
 	CodeInternal         = "internal"
 )
 
@@ -71,6 +72,8 @@ func classify(err error) (status int, code, message string) {
 		return http.StatusUnauthorized, CodeUnauthorized, de.Message
 	case errors.Is(de.Kind, domain.ErrForbidden):
 		return http.StatusForbidden, CodeForbidden, de.Message
+	case errors.Is(de.Kind, domain.ErrUnavailable):
+		return http.StatusServiceUnavailable, CodeUnavailable, de.Message
 	default:
 		return http.StatusInternalServerError, CodeInternal, "internal server error"
 	}

@@ -102,9 +102,9 @@ func TestApproverLabel(t *testing.T) {
 	// The fixture's ed25519 key for seed 1, as Phantom returns it.
 	pub := ed25519.NewKeyFromSeed(make32(1)).Public().(ed25519.PublicKey)
 	tests := []struct {
-		scheme                       domain.WalletScheme
+		scheme                        domain.WalletScheme
 		accountID, publicKey, address string
-		wantLabel                    string
+		wantLabel                     string
 	}{
 		{scheme: domain.SchemeNEP413, accountID: "client.near", publicKey: domain.FormatNEARPublicKey(pub),
 			wantLabel: "nep413:client.near"},

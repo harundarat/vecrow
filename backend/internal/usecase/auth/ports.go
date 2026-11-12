@@ -62,15 +62,13 @@ type AccountRepository interface {
 }
 
 // AccessKeyStatus says how a public key relates to a NEAR account.
-type AccessKeyStatus int
+type AccessKeyStatus = domain.AccessKeyStatus
 
 const (
-	AccessKeyFullAccess AccessKeyStatus = iota + 1
-	// AccessKeyLimited: the key is a function-call key.
-	AccessKeyLimited
-	// AccessKeyMissing: the account exists but the key is not on it.
-	AccessKeyMissing
-	AccountMissing
+	AccessKeyFullAccess = domain.AccessKeyFullAccess
+	AccessKeyLimited    = domain.AccessKeyLimited
+	AccessKeyMissing    = domain.AccessKeyMissing
+	AccountMissing      = domain.AccountMissing
 )
 
 // NEARAccessKeys looks up access keys on the NEAR chain.
