@@ -3,14 +3,18 @@ package bootstrap
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
 	"github.com/harundarat/vecrow/backend/internal/config"
 	"github.com/harundarat/vecrow/backend/internal/delivery/worker"
 	"github.com/harundarat/vecrow/backend/internal/infrastructure/queue"
+	"github.com/harundarat/vecrow/backend/internal/repository"
 	"github.com/harundarat/vecrow/backend/internal/scheduler"
+	"github.com/harundarat/vecrow/backend/internal/usecase/jobs"
 )
 
 // Worker is the background process: the scheduler finds due work and
@@ -34,10 +38,13 @@ func NewWorker(ctx context.Context, cfg config.Config, log *slog.Logger) (_ App,
 		}
 	}()
 
-	// Opened now so a misconfigured worker fails at startup. The worker has
-	// no consumers using them yet.
-	if _, _, err = openStores(ctx, cfg, log, &w.closers); err != nil {
+	db, kv, err := openStores(ctx, cfg, log, &w.closers)
+	if err != nil {
 		return nil, err
+	}
+	stack, err := newEscrowStack(cfg, db, kv, log, true)
+	if err != nil {
+		return nil, fmt.Errorf("worker: %w", err)
 	}
 
 	q, err := queue.OpenRabbitMQ(ctx, queue.RabbitMQConfig{
@@ -54,10 +61,22 @@ func NewWorker(ctx context.Context, cfg config.Config, log *slog.Logger) (_ App,
 	}
 	w.closers.add(queue.Name, q.Close)
 
-	w.scheduler = scheduler.New(cfg.Scheduler.Interval, log)
-
-	w.consumers = worker.NewServer(q, log)
+	j := jobs.New(stack.escrows, stack.funding, q, repository.NewJobLeases(kv), jobs.Config{
+		SyncInterval:    cfg.Jobs.SyncInterval,
+		FundingInterval: cfg.Jobs.FundingInterval,
+		BatchSize:       cfg.Jobs.BatchSize,
+		LeaseTTL:        cfg.Jobs.LeaseTTL,
+		LockTTL:         jobLockTTL(cfg),
+	}, log)
+	w.scheduler = scheduler.New(cfg.Scheduler.Interval, log, j.EscrowTask(), j.FundingTask())
+	w.consumers = worker.NewServer(q, log, worker.JobRoutes(j)...)
 	return w, nil
+}
+
+// jobLockTTL outlasts a job: its handler timeout, plus the time a
+// transaction whose send timed out is looked up after it.
+func jobLockTTL(cfg config.Config) time.Duration {
+	return cfg.Queue.HandlerTimeout + nearAwaitTimeout + time.Minute
 }
 
 // Run runs the scheduler and consumers until ctx is cancelled.

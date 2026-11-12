@@ -27,6 +27,9 @@ const (
 	// nearSendTimeout bounds a send_tx call, which waits until the
 	// transaction is final; a timeout is followed by status lookups.
 	nearSendTimeout = 30 * time.Second
+	// nearAwaitTimeout bounds how long a transaction whose send timed out
+	// is looked up before its outcome is reported unknown.
+	nearAwaitTimeout = 2 * time.Minute
 	// oneClickTimeout bounds each 1Click call.
 	oneClickTimeout = 30 * time.Second
 )
@@ -57,7 +60,8 @@ func newEscrowStack(cfg config.Config, db *database.Postgres, kv cache.Store, lo
 		// The parse error never contains the key.
 		return nil, fmt.Errorf("RELAYER_PRIVATE_KEY: %w", err)
 	}
-	relayer := nearrpc.NewSigner(send, cfg.Relayer.AccountID, relayerKey, nonces)
+	relayer := nearrpc.NewSigner(send, cfg.Relayer.AccountID, relayerKey, nonces,
+		nearrpc.WithAwaitTimeout(nearAwaitTimeout))
 	contract := repository.NewEscrowContract(cfg.Escrow.ContractID, view, relayer)
 
 	var storage escrow.Storage = noStorage{}
@@ -66,7 +70,8 @@ func newEscrowStack(cfg config.Config, db *database.Postgres, kv cache.Store, lo
 		if err != nil {
 			return nil, fmt.Errorf("STORAGE_PRIVATE_KEY: %w", err)
 		}
-		payer := nearrpc.NewSigner(send, cfg.Storage.AccountID, storageKey, nonces)
+		payer := nearrpc.NewSigner(send, cfg.Storage.AccountID, storageKey, nonces,
+			nearrpc.WithAwaitTimeout(nearAwaitTimeout))
 		storage = repository.NewFTStorage(cfg.Escrow.USDCContractID, view, payer)
 	}
 
