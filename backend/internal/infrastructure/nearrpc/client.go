@@ -1,17 +1,13 @@
-// Package nearrpc is a minimal NEAR JSON-RPC client for the view queries the
-// backend needs.
+// Package nearrpc is a minimal NEAR JSON-RPC client: the view queries the
+// backend needs, and sending transactions signed with an account's key.
 package nearrpc
 
 import (
-	"bytes"
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 )
@@ -123,61 +119,13 @@ type rpcResponse struct {
 	Error  *rpcError       `json:"error"`
 }
 
-type rpcError struct {
-	Name  string `json:"name"`
-	Cause struct {
-		Name string `json:"name"`
-	} `json:"cause"`
-	Message string `json:"message"`
-}
-
 // query calls the "query" method and decodes the result into out.
 func (c *Client) query(ctx context.Context, params map[string]string, out any) error {
-	kind := params["request_type"]
-	body, err := json.Marshal(rpcRequest{JSONRPC: "2.0", ID: "vecrow", Method: "query", Params: params})
-	if err != nil {
-		return fmt.Errorf("nearrpc: %s: encode request: %w", kind, err)
+	err := c.call(ctx, "query", params, out)
+	var rpcErr *Error
+	if errors.As(err, &rpcErr) {
+		// Name the request type, not only the method.
+		rpcErr.Method = params["request_type"]
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("nearrpc: %s: %w", kind, err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		// RPC URLs of hosted providers can carry an API key, so the URL that
-		// *url.Error includes is left out.
-		var uerr *url.Error
-		if errors.As(err, &uerr) {
-			err = uerr.Err
-		}
-		return fmt.Errorf("nearrpc: %s: request failed: %w", kind, err)
-	}
-	defer resp.Body.Close()
-
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	if err != nil {
-		return fmt.Errorf("nearrpc: %s: read response: %w", kind, err)
-	}
-	var r rpcResponse
-	if err := json.Unmarshal(raw, &r); err != nil {
-		return fmt.Errorf("nearrpc: %s: unexpected response (HTTP %d)", kind, resp.StatusCode)
-	}
-	if r.Error != nil {
-		switch r.Error.Cause.Name {
-		case "UNKNOWN_ACCOUNT":
-			return ErrUnknownAccount
-		case "UNKNOWN_ACCESS_KEY":
-			return ErrUnknownAccessKey
-		}
-		return fmt.Errorf("nearrpc: %s: %s (%s)", kind, r.Error.Message, cmp.Or(r.Error.Cause.Name, r.Error.Name))
-	}
-	if resp.StatusCode != http.StatusOK || len(r.Result) == 0 {
-		return fmt.Errorf("nearrpc: %s: unexpected response (HTTP %d)", kind, resp.StatusCode)
-	}
-	if err := json.Unmarshal(r.Result, out); err != nil {
-		return fmt.Errorf("nearrpc: %s: decode result: %w", kind, err)
-	}
-	return nil
+	return err
 }
