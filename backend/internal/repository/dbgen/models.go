@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Account struct {
@@ -15,6 +16,119 @@ type Account struct {
 	Username  string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+type Escrow struct {
+	ID               string
+	CreatorAccountID uuid.UUID
+	CreatorRole      string
+	Status           string
+	FeeBps           int32
+	Freelancer       *string
+	Split            []byte
+	Approver         []byte
+	RefundAccount    *string
+	ReviewWindowSec  *int64
+	Balance          *string
+	ChainCreatedAtMs *int64
+	FundedAtMs       *int64
+	ChainBlockHeight *int64
+	ChainSyncedAt    pgtype.Timestamptz
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+type EscrowEvent struct {
+	ReceiptID string
+	LogIndex  int32
+	TxHash    string
+	Position  int32
+	EscrowID  string
+	Event     string
+	Data      []byte
+	CreatedAt time.Time
+}
+
+type EscrowMilestone struct {
+	EscrowID      string
+	Milestone     int32
+	Amount        string
+	Status        string
+	SubmittedAtMs *int64
+	RevisionCount int32
+}
+
+type EscrowParty struct {
+	EscrowID string
+	Role     string
+	Scheme   string
+	Address  string
+}
+
+type EscrowPendingPayout struct {
+	EscrowID  string
+	AccountID string
+	Amount    string
+}
+
+type EscrowSubmission struct {
+	ID                    uuid.UUID
+	EscrowID              string
+	Status                string
+	Terms                 []byte
+	Message               string
+	DeadlineMs            int64
+	WalletScheme          string
+	WalletAddress         string
+	CounterpartySignature string
+	CounterpartyPublicKey *string
+	CreatorSignature      *string
+	CreatorPublicKey      *string
+	FailureReason         *string
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+}
+
+type EscrowTransaction struct {
+	TxHash     string
+	Seq        *int64
+	EscrowID   string
+	Method     string
+	SignerID   string
+	SenderID   string
+	ReceiverID string
+	Succeeded  bool
+	Error      *string
+	CreatedAt  time.Time
+}
+
+type FundingQuote struct {
+	ID                uuid.UUID
+	EscrowID          string
+	OriginAsset       string
+	RefundTo          string
+	DepositAddress    string
+	DepositMemo       *string
+	AmountIn          string
+	AmountInFormatted string
+	AmountOut         string
+	Deadline          pgtype.Timestamptz
+	Quote             []byte
+	Status            string
+	OneclickStatus    *string
+	Watching          bool
+	CheckedAt         pgtype.Timestamptz
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+type RevisionNote struct {
+	ID        uuid.UUID
+	EscrowID  string
+	Milestone int32
+	Reason    string
+	TxHash    string
+	CreatedAt time.Time
 }
 
 type Wallet struct {

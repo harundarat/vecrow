@@ -179,3 +179,15 @@ func (r *AccountRepository) UnlinkWallet(ctx context.Context, accountID, walletI
 	}
 	return n > 0, nil
 }
+
+// IsWalletOwner reports whether w is linked to the account.
+func (r *AccountRepository) IsWalletOwner(ctx context.Context, accountID string, w domain.Wallet) (bool, error) {
+	owner, err := r.FindWalletOwner(ctx, w)
+	if errors.Is(err, auth.ErrWalletNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return owner == accountID, nil
+}
