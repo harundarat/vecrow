@@ -18,6 +18,8 @@ type Querier interface {
 	GetAccount(ctx context.Context, id uuid.UUID) (GetAccountRow, error)
 	GetActiveSubmission(ctx context.Context, escrowID string) (EscrowSubmission, error)
 	GetEscrow(ctx context.Context, id string) (Escrow, error)
+	GetFundingQuote(ctx context.Context, id uuid.UUID) (FundingQuote, error)
+	GetLatestFundingQuote(ctx context.Context, escrowID string) (FundingQuote, error)
 	GetWalletOwner(ctx context.Context, arg GetWalletOwnerParams) (uuid.UUID, error)
 	// Inserts skip conflicts instead of failing: a unique violation aborts the
 	// surrounding transaction in PostgreSQL, so callers could not retry inside it.
@@ -28,6 +30,8 @@ type Querier interface {
 	// events (migrations/00003_create_escrows.sql).
 	InsertEscrow(ctx context.Context, arg InsertEscrowParams) error
 	InsertEvent(ctx context.Context, arg InsertEventParams) error
+	// 1Click quotes and their funding status (funding_quotes).
+	InsertFundingQuote(ctx context.Context, arg InsertFundingQuoteParams) error
 	InsertMilestones(ctx context.Context, arg InsertMilestonesParams) error
 	InsertParties(ctx context.Context, arg InsertPartiesParams) error
 	InsertPendingPayouts(ctx context.Context, arg InsertPendingPayoutsParams) error
@@ -54,12 +58,14 @@ type Querier interface {
 	ListRevisionNotes(ctx context.Context, escrowID string) ([]ListRevisionNotesRow, error)
 	ListTransactions(ctx context.Context, escrowID string) ([]ListTransactionsRow, error)
 	ListWallets(ctx context.Context, accountID uuid.UUID) ([]ListWalletsRow, error)
+	ListWatchedQuotes(ctx context.Context, arg ListWatchedQuotesParams) ([]uuid.UUID, error)
 	LockAccount(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	LockEscrow(ctx context.Context, id string) (Escrow, error)
 	// Stores a get_escrow snapshot unless a newer one is stored. Returns no row
 	// when the stored snapshot was read at a higher block.
 	UpdateEscrowChain(ctx context.Context, arg UpdateEscrowChainParams) (string, error)
 	UpdateEscrowStatus(ctx context.Context, arg UpdateEscrowStatusParams) (int64, error)
+	UpdateFundingStatus(ctx context.Context, arg UpdateFundingStatusParams) (int64, error)
 	// submitted_at_ms is -1 for a milestone that has none.
 	UpdateMilestonesChain(ctx context.Context, arg UpdateMilestonesChainParams) error
 	UpdateSubmission(ctx context.Context, arg UpdateSubmissionParams) (int64, error)

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Account struct {
@@ -33,7 +32,7 @@ type Escrow struct {
 	ChainCreatedAtMs *int64
 	FundedAtMs       *int64
 	ChainBlockHeight *int64
-	ChainSyncedAt    pgtype.Timestamptz
+	ChainSyncedAt    *time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
@@ -112,12 +111,12 @@ type FundingQuote struct {
 	AmountIn          string
 	AmountInFormatted string
 	AmountOut         string
-	Deadline          pgtype.Timestamptz
+	Deadline          *time.Time
 	Quote             []byte
 	Status            string
 	OneclickStatus    *string
 	Watching          bool
-	CheckedAt         pgtype.Timestamptz
+	CheckedAt         *time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }

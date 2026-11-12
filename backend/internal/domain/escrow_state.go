@@ -290,8 +290,12 @@ type FundingQuote struct {
 	AmountOut         string
 	Deadline          *time.Time
 	Status            FundingStatus
-	// OneClickStatus is the raw 1Click status, e.g. PROCESSING or FAILED.
+	// OneClickStatus is the raw 1Click status, e.g. PROCESSING or FAILED;
+	// empty until 1Click knows of a deposit.
 	OneClickStatus string
+	// Watching is true while the funding watcher still checks the status.
+	Watching  bool
+	CheckedAt *time.Time
 	// Raw is the quote response as 1Click returned it.
 	Raw       []byte
 	CreatedAt time.Time
