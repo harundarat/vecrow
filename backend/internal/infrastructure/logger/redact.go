@@ -22,6 +22,7 @@ var sensitiveKeys = map[string]struct{}{
 	"refresh_token": {},
 	"session_token": {},
 	"guest_token":   {},
+	"x-guest-token": {},
 	"otp":           {},
 	"password":      {},
 	"secret":        {},

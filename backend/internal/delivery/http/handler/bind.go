@@ -25,6 +25,11 @@ func bindJSON(c *gin.Context, dst any) bool {
 	if err == nil {
 		return true
 	}
+	return writeBindError(c, err)
+}
+
+// writeBindError writes the response for a failed bind and returns false.
+func writeBindError(c *gin.Context, err error) bool {
 	var tooLarge *http.MaxBytesError
 	if errors.As(err, &tooLarge) {
 		_ = c.Error(err)
@@ -34,6 +39,19 @@ func bindJSON(c *gin.Context, dst any) bool {
 	}
 	response.Error(c, domain.InvalidArgument("%s", describeBindError(err)))
 	return false
+}
+
+// bindOptionalJSON is bindJSON for an optional body: an empty body leaves
+// dst unchanged.
+func bindOptionalJSON(c *gin.Context, dst any) bool {
+	if c.Request.ContentLength == 0 {
+		return true
+	}
+	err := c.ShouldBindJSON(dst)
+	if err == nil || errors.Is(err, io.EOF) {
+		return true
+	}
+	return writeBindError(c, err)
 }
 
 func describeBindError(err error) string {

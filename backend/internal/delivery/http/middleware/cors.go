@@ -25,7 +25,7 @@ func CORS(allowedOrigins []string) (gin.HandlerFunc, error) {
 			http.MethodGet, http.MethodPost, http.MethodPut,
 			http.MethodPatch, http.MethodDelete, http.MethodOptions,
 		},
-		AllowHeaders:  []string{"Origin", "Content-Type", "Authorization", requestid.Header},
+		AllowHeaders:  []string{"Origin", "Content-Type", "Authorization", GuestTokenHeader, requestid.Header},
 		ExposeHeaders: []string{requestid.Header},
 		MaxAge:        12 * time.Hour,
 	}

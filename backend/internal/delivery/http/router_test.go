@@ -45,6 +45,8 @@ type testServer struct {
 	logs     *bytes.Buffer
 	login    *fakeLogin
 	accounts *fakeAccountUseCase
+	escrows  *fakeEscrows
+	funding  *fakeFunding
 }
 
 func newTestServer(t *testing.T, issuer fakeIssuer, checkers ...handler.Checker) *testServer {
@@ -55,6 +57,7 @@ func newTestServer(t *testing.T, issuer fakeIssuer, checkers ...handler.Checker)
 		t.Fatal(err)
 	}
 	login, accounts := &fakeLogin{}, &fakeAccountUseCase{}
+	escrows, fundingUC := &fakeEscrows{}, &fakeFunding{}
 	engine, err := deliveryhttp.NewRouter(
 		deliveryhttp.RouterConfig{CORSAllowedOrigins: []string{"http://localhost:5173"}},
 		log,
@@ -62,13 +65,16 @@ func newTestServer(t *testing.T, issuer fakeIssuer, checkers ...handler.Checker)
 			Health:   handler.NewHealthHandler(log, time.Second, checkers...),
 			Auth:     handler.NewAuthHandler(issuer, login),
 			Me:       handler.NewMeHandler(accounts),
+			Escrow:   handler.NewEscrowHandler(escrows, fakeProver{}, explorerTxURL),
+			Funding:  handler.NewFundingHandler(fundingUC),
 			Sessions: fakeSessions{},
+			Guests:   fakeGuests{},
 		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &testServer{engine: engine, logs: &logs, login: login, accounts: accounts}
+	return &testServer{engine: engine, logs: &logs, login: login, accounts: accounts, escrows: escrows, funding: fundingUC}
 }
 
 func (s *testServer) do(method, path, body string, headers ...string) *httptest.ResponseRecorder {

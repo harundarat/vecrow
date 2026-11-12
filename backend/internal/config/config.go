@@ -32,6 +32,11 @@ type Config struct {
 	Scheduler Scheduler
 	Auth      Auth
 	NEAR      NEAR
+	Escrow    Escrow
+	Relayer   Relayer
+	Storage   Storage
+	OneClick  OneClick
+	Jobs      Jobs
 }
 
 type App struct {
@@ -90,11 +95,79 @@ type Auth struct {
 	// Required by the API only.
 	Domain     string        `env:"AUTH_DOMAIN"`
 	SessionTTL time.Duration `env:"AUTH_SESSION_TTL" envDefault:"24h"`
+	// GuestTokenTTL is the lifetime of the guest token the other party of an
+	// escrow receives (R-21).
+	GuestTokenTTL time.Duration `env:"AUTH_GUEST_TOKEN_TTL" envDefault:"24h"`
 }
 
 type NEAR struct {
-	// RPCURL is the NEAR JSON-RPC endpoint. Required by the API only.
+	// RPCURL is the NEAR JSON-RPC endpoint. Required by the api and worker.
 	RPCURL string `env:"NEAR_RPC_URL"`
+	// ExplorerTxURL prefixes a transaction hash to link it in an explorer.
+	ExplorerTxURL string `env:"NEAR_EXPLORER_TX_URL"`
+}
+
+// Escrow configures the escrow contract. ContractID, FeeBPS, USDCContractID
+// and AppURL are required by the api and worker.
+type Escrow struct {
+	ContractID string `env:"ESCROW_CONTRACT_ID"`
+	// FeeBPS must equal the fee_bps the contract was deployed with; the
+	// contract rejects terms with another fee. The contract has no view of
+	// it, so it is configured here.
+	FeeBPS *uint16 `env:"ESCROW_FEE_BPS"`
+	// TermsTTL is how long signed terms stay valid (their deadline).
+	TermsTTL time.Duration `env:"ESCROW_TERMS_TTL" envDefault:"24h"`
+	// ExpiryGrace is waited after a deadline before an approved escrow not
+	// yet on-chain returns to Open.
+	ExpiryGrace time.Duration `env:"ESCROW_EXPIRY_GRACE" envDefault:"5m"`
+	// USDCContractID is the NEP-141 token the escrows hold.
+	USDCContractID string `env:"USDC_CONTRACT_ID"`
+	// AppURL is the frontend's base URL; escrow links are APP_URL/escrows/{id}.
+	AppURL string `env:"APP_URL"`
+}
+
+// Relayer is the account that sends transactions to the escrow contract and
+// pays their gas (R-09). Required by the api and worker.
+type Relayer struct {
+	AccountID string `env:"RELAYER_ACCOUNT_ID"`
+	// PrivateKey is "ed25519:<base58>". Never logged.
+	PrivateKey string `env:"RELAYER_PRIVATE_KEY"`
+	// MaxGasTGas caps the gas of a relayed delegate action.
+	MaxGasTGas uint64 `env:"RELAYER_MAX_GAS_TGAS" envDefault:"100"`
+}
+
+// Storage is the account that pays the USDC storage deposits (R-20).
+// Required by the worker; the api does not register storage.
+type Storage struct {
+	AccountID  string `env:"STORAGE_ACCOUNT_ID"`
+	PrivateKey string `env:"STORAGE_PRIVATE_KEY"`
+}
+
+// OneClick configures the 1Click Swap API (R-08).
+type OneClick struct {
+	URL string `env:"ONECLICK_URL" envDefault:"https://1click.chaindefuser.com"`
+	// APIKey is sent as a bearer token; without it quotes pay an extra fee.
+	APIKey      string        `env:"ONECLICK_API_KEY"`
+	SlippageBPS int           `env:"ONECLICK_SLIPPAGE_BPS" envDefault:"100"`
+	QuoteTTL    time.Duration `env:"ONECLICK_QUOTE_TTL" envDefault:"1h"`
+	// WatchGrace is how long after a quote's deadline its status is watched.
+	WatchGrace time.Duration `env:"ONECLICK_WATCH_GRACE" envDefault:"24h"`
+	// RefreshAfter is the age after which GET /escrows/:id/funding reads the
+	// status from 1Click again.
+	RefreshAfter time.Duration `env:"ONECLICK_REFRESH_AFTER" envDefault:"10s"`
+	TokensTTL    time.Duration `env:"ONECLICK_TOKENS_TTL" envDefault:"5m"`
+}
+
+// Jobs configures the worker's jobs (architecture.md §7.3).
+type Jobs struct {
+	// SyncInterval is how often an escrow on-chain is read again.
+	SyncInterval time.Duration `env:"JOB_SYNC_INTERVAL" envDefault:"5m"`
+	// FundingInterval is how often a watched quote's status is checked.
+	FundingInterval time.Duration `env:"JOB_FUNDING_INTERVAL" envDefault:"30s"`
+	// BatchSize bounds the items of each kind one scheduler run publishes.
+	BatchSize int `env:"JOB_BATCH_SIZE" envDefault:"100"`
+	// LeaseTTL is how long a published job is not published again.
+	LeaseTTL time.Duration `env:"JOB_LEASE_TTL" envDefault:"2m"`
 }
 
 // Load reads an optional .env file from the working directory, then parses
@@ -180,8 +253,89 @@ func (c Config) validate() error {
 	if strings.ContainsFunc(c.Auth.Domain, func(r rune) bool { return r <= ' ' || r == 0x7f }) {
 		errs = append(errs, fmt.Errorf("AUTH_DOMAIN must not contain spaces or control characters, got %q", c.Auth.Domain))
 	}
-	if c.NEAR.RPCURL != "" && !strings.HasPrefix(c.NEAR.RPCURL, "http://") && !strings.HasPrefix(c.NEAR.RPCURL, "https://") {
-		errs = append(errs, errors.New("NEAR_RPC_URL must start with http:// or https://"))
+	for _, u := range []struct{ name, val string }{
+		{"NEAR_RPC_URL", c.NEAR.RPCURL},
+		{"NEAR_EXPLORER_TX_URL", c.NEAR.ExplorerTxURL},
+		{"APP_URL", c.Escrow.AppURL},
+		{"ONECLICK_URL", c.OneClick.URL},
+	} {
+		if u.val != "" && !isHTTPURL(u.val) {
+			errs = append(errs, fmt.Errorf("%s must start with http:// or https://", u.name))
+		}
+	}
+	for _, d := range []struct {
+		name string
+		val  time.Duration
+	}{
+		{"AUTH_GUEST_TOKEN_TTL", c.Auth.GuestTokenTTL},
+		{"ESCROW_TERMS_TTL", c.Escrow.TermsTTL},
+		{"ONECLICK_QUOTE_TTL", c.OneClick.QuoteTTL},
+		{"ONECLICK_REFRESH_AFTER", c.OneClick.RefreshAfter},
+		{"ONECLICK_TOKENS_TTL", c.OneClick.TokensTTL},
+		{"JOB_SYNC_INTERVAL", c.Jobs.SyncInterval},
+		{"JOB_FUNDING_INTERVAL", c.Jobs.FundingInterval},
+		{"JOB_LEASE_TTL", c.Jobs.LeaseTTL},
+	} {
+		if d.val <= 0 {
+			errs = append(errs, fmt.Errorf("%s must be > 0, got %s", d.name, d.val))
+		}
+	}
+	if c.Escrow.ExpiryGrace < 0 || c.OneClick.WatchGrace < 0 {
+		errs = append(errs, errors.New("ESCROW_EXPIRY_GRACE and ONECLICK_WATCH_GRACE must be >= 0"))
+	}
+	if c.Escrow.FeeBPS != nil && *c.Escrow.FeeBPS > maxFeeBPS {
+		errs = append(errs, fmt.Errorf("ESCROW_FEE_BPS must be at most %d, got %d", maxFeeBPS, *c.Escrow.FeeBPS))
+	}
+	if c.Relayer.MaxGasTGas < 1 || c.Relayer.MaxGasTGas > maxGasTGas {
+		errs = append(errs, fmt.Errorf("RELAYER_MAX_GAS_TGAS must be between 1 and %d", maxGasTGas))
+	}
+	if c.OneClick.SlippageBPS < 0 || c.OneClick.SlippageBPS > 10_000 {
+		errs = append(errs, errors.New("ONECLICK_SLIPPAGE_BPS must be between 0 and 10000"))
+	}
+	if c.Jobs.BatchSize < 1 {
+		errs = append(errs, errors.New("JOB_BATCH_SIZE must be >= 1"))
 	}
 	return errors.Join(errs...)
+}
+
+const (
+	// maxFeeBPS is 100%.
+	maxFeeBPS = 10_000
+	// maxGasTGas is NEAR's gas limit of a transaction.
+	maxGasTGas = 300
+)
+
+func isHTTPURL(s string) bool {
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
+// RequireEscrow reports the escrow settings the api and worker need that are
+// missing. withStorage also requires the storage account.
+func (c Config) RequireEscrow(withStorage bool) error {
+	var missing []string
+	for _, v := range []struct{ name, val string }{
+		{"NEAR_RPC_URL", c.NEAR.RPCURL},
+		{"ESCROW_CONTRACT_ID", c.Escrow.ContractID},
+		{"USDC_CONTRACT_ID", c.Escrow.USDCContractID},
+		{"APP_URL", c.Escrow.AppURL},
+		{"RELAYER_ACCOUNT_ID", c.Relayer.AccountID},
+		{"RELAYER_PRIVATE_KEY", c.Relayer.PrivateKey},
+	} {
+		if v.val == "" {
+			missing = append(missing, v.name)
+		}
+	}
+	if c.Escrow.FeeBPS == nil {
+		missing = append(missing, "ESCROW_FEE_BPS")
+	}
+	if withStorage && c.Storage.AccountID == "" {
+		missing = append(missing, "STORAGE_ACCOUNT_ID")
+	}
+	if withStorage && c.Storage.PrivateKey == "" {
+		missing = append(missing, "STORAGE_PRIVATE_KEY")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("%s required", strings.Join(missing, ", "))
+	}
+	return nil
 }

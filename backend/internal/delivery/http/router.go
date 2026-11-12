@@ -32,6 +32,10 @@ const maxBodyBytes = 1 << 20
 const (
 	nonceRateLimit  = 20
 	verifyRateLimit = 20 // shared by /auth/verify and POST /me/wallets
+	// Escrow endpoints that verify signatures, call the NEAR RPC, send
+	// transactions paid by the relayer, or call 1Click.
+	escrowSignedRateLimit = 30
+	escrowReadRateLimit   = 120
 )
 
 type RouterConfig struct {
@@ -42,11 +46,15 @@ type RouterConfig struct {
 }
 
 type Handlers struct {
-	Health *handler.HealthHandler
-	Auth   *handler.AuthHandler
-	Me     *handler.MeHandler
+	Health  *handler.HealthHandler
+	Auth    *handler.AuthHandler
+	Me      *handler.MeHandler
+	Escrow  *handler.EscrowHandler
+	Funding *handler.FundingHandler
 	// Sessions authenticates bearer tokens for the routes that need a session.
 	Sessions middleware.SessionAuthenticator
+	// Guests authenticates guest tokens (X-Guest-Token).
+	Guests middleware.GuestAuthenticator
 }
 
 func NewRouter(cfg RouterConfig, log *slog.Logger, h Handlers) (*gin.Engine, error) {
@@ -96,6 +104,29 @@ func NewRouter(cfg RouterConfig, log *slog.Logger, h Handlers) (*gin.Engine, err
 		me.PATCH("", h.Me.Update)
 		me.POST("/wallets", verifyLimit, h.Me.LinkWallet)
 		me.DELETE("/wallets/:id", h.Me.UnlinkWallet)
+		me.GET("/escrows", h.Escrow.ListMine)
+
+		optionalAuth := middleware.OptionalAuth(h.Sessions, h.Guests)
+		signedLimit := middleware.RateLimit(escrowSignedRateLimit, time.Minute)
+		readLimit := middleware.RateLimit(escrowReadRateLimit, time.Minute)
+
+		v1.GET("/tokens", readLimit, h.Funding.Tokens)
+
+		escrows := v1.Group("/escrows")
+		escrows.POST("", requireSession, h.Escrow.Create)
+		escrows.GET("/:id", readLimit, optionalAuth, h.Escrow.Get)
+		escrows.POST("/:id/terms", readLimit, h.Escrow.Terms)
+		escrows.POST("/:id/counterparty", signedLimit, h.Escrow.Counterparty)
+		escrows.POST("/:id/counterparty/approve", requireSession, signedLimit, h.Escrow.Approve)
+		escrows.POST("/:id/counterparty/reject", requireSession, h.Escrow.Reject)
+		escrows.POST("/:id/cancel", signedLimit, optionalAuth, h.Escrow.Cancel)
+		escrows.POST("/:id/guest-token", verifyLimit, h.Escrow.GuestToken)
+		escrows.POST("/:id/quote", signedLimit, optionalAuth, h.Funding.Quote)
+		escrows.GET("/:id/funding", readLimit, optionalAuth, h.Funding.Status)
+		escrows.POST("/:id/milestones/:n/submit", signedLimit, h.Escrow.SubmitMilestone)
+		escrows.POST("/:id/milestones/:n/approve", signedLimit, h.Escrow.ApproveMilestone)
+		escrows.POST("/:id/milestones/:n/revision", signedLimit, h.Escrow.RequestRevision)
+		escrows.POST("/:id/refund", signedLimit, h.Escrow.Refund)
 	}
 
 	for _, rt := range r.Routes() {

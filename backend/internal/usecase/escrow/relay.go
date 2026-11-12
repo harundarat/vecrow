@@ -45,14 +45,14 @@ type ActionResult struct {
 // return it.
 func DecodeDelegate(s string) ([]byte, error) {
 	if s == "" {
-		return nil, domain.InvalidArgument("signed_delegate_action is required")
+		return nil, domain.InvalidArgument("delegate_action is required")
 	}
 	b, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
 		b, err = base64.RawURLEncoding.DecodeString(s)
 	}
 	if err != nil || len(b) > maxDelegateBytes {
-		return nil, domain.InvalidArgument("signed_delegate_action must be base64 of a Borsh SignedDelegateAction")
+		return nil, domain.InvalidArgument("delegate_action must be base64 of a Borsh SignedDelegateAction")
 	}
 	return b, nil
 }
@@ -66,7 +66,7 @@ func (s *Service) checkDelegate(raw []byte, t domain.EscrowTerms, method string,
 	want func(args map[string]json.RawMessage) error) (neartx.SignedDelegateAction, error) {
 	sda, err := neartx.DecodeSignedDelegateAction(raw)
 	if err != nil {
-		return sda, domain.InvalidArgument("signed_delegate_action is malformed: %v", err)
+		return sda, domain.InvalidArgument("delegate_action is malformed: %v", err)
 	}
 	da := sda.DelegateAction
 	if da.ReceiverID != s.ContractID() {
@@ -318,7 +318,7 @@ func (s *Service) Cancel(ctx context.Context, id string, in CancelInput) (Action
 		}
 		return s.finish(ctx, id, "cancel", func() (domain.Transaction, error) { return s.Contract.Cancel(ctx, id, a) })
 	default:
-		return ActionResult{}, domain.InvalidArgument("give either the freelancer's signed_delegate_action or the approver's nonce, deadline_ms and signature")
+		return ActionResult{}, domain.InvalidArgument("give either the freelancer's delegate_action or the approver's nonce, deadline_ms and signature")
 	}
 }
 

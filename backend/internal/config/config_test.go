@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -17,7 +18,12 @@ var configKeys = []string{
 	"DATABASE_URL", "DATABASE_MAX_CONNS", "DATABASE_MIN_CONNS", "DATABASE_MAX_CONN_LIFETIME",
 	"DATABASE_MAX_CONN_IDLE_TIME", "CACHE_URL", "QUEUE_URL", "QUEUE_PREFETCH", "QUEUE_MAX_RETRIES",
 	"QUEUE_RETRY_DELAY", "QUEUE_HANDLER_TIMEOUT", "SCHEDULER_INTERVAL", "AUTH_NONCE_TTL",
-	"AUTH_DOMAIN", "AUTH_SESSION_TTL", "NEAR_RPC_URL",
+	"AUTH_DOMAIN", "AUTH_SESSION_TTL", "AUTH_GUEST_TOKEN_TTL", "NEAR_RPC_URL", "NEAR_EXPLORER_TX_URL",
+	"ESCROW_CONTRACT_ID", "ESCROW_FEE_BPS", "ESCROW_TERMS_TTL", "ESCROW_EXPIRY_GRACE", "USDC_CONTRACT_ID",
+	"APP_URL", "RELAYER_ACCOUNT_ID", "RELAYER_PRIVATE_KEY", "RELAYER_MAX_GAS_TGAS", "STORAGE_ACCOUNT_ID",
+	"STORAGE_PRIVATE_KEY", "ONECLICK_URL", "ONECLICK_API_KEY", "ONECLICK_SLIPPAGE_BPS", "ONECLICK_QUOTE_TTL",
+	"ONECLICK_WATCH_GRACE", "ONECLICK_REFRESH_AFTER", "ONECLICK_TOKENS_TTL", "JOB_SYNC_INTERVAL",
+	"JOB_FUNDING_INTERVAL", "JOB_BATCH_SIZE", "JOB_LEASE_TTL",
 }
 
 func clearEnv(t *testing.T) {
@@ -144,6 +150,85 @@ func TestLoad_AuthAndNEAR(t *testing.T) {
 	} {
 		t.Run("rejects "+key, func(t *testing.T) {
 			setRequired(t)
+			t.Setenv(key, bad)
+			if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), key) {
+				t.Fatalf("error = %v, want %s error", err, key)
+			}
+		})
+	}
+}
+
+func setEscrow(t *testing.T) {
+	t.Helper()
+	setRequired(t)
+	for k, v := range map[string]string{
+		"NEAR_RPC_URL":        "http://localhost:3030",
+		"ESCROW_CONTRACT_ID":  "escrow.test.near",
+		"ESCROW_FEE_BPS":      "0",
+		"USDC_CONTRACT_ID":    "usdc.test.near",
+		"APP_URL":             "http://localhost:5173",
+		"RELAYER_ACCOUNT_ID":  "relayer.test.near",
+		"RELAYER_PRIVATE_KEY": "ed25519:secret",
+	} {
+		t.Setenv(k, v)
+	}
+}
+
+func TestLoad_EscrowDefaults(t *testing.T) {
+	setEscrow(t)
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Escrow.FeeBPS == nil || *cfg.Escrow.FeeBPS != 0 {
+		t.Errorf("fee bps = %v, want explicit 0", cfg.Escrow.FeeBPS)
+	}
+	if cfg.Escrow.TermsTTL != 24*time.Hour || cfg.Auth.GuestTokenTTL != 24*time.Hour ||
+		cfg.Relayer.MaxGasTGas != 100 || cfg.OneClick.URL != "https://1click.chaindefuser.com" ||
+		cfg.OneClick.WatchGrace != 24*time.Hour || cfg.Jobs.BatchSize != 100 {
+		t.Errorf("unexpected defaults: %+v %+v %+v %+v", cfg.Escrow, cfg.Relayer.MaxGasTGas, cfg.OneClick, cfg.Jobs)
+	}
+	if err := cfg.RequireEscrow(false); err != nil {
+		t.Errorf("RequireEscrow(false) = %v", err)
+	}
+	err = cfg.RequireEscrow(true)
+	if err == nil || !strings.Contains(err.Error(), "STORAGE_ACCOUNT_ID") || !strings.Contains(err.Error(), "STORAGE_PRIVATE_KEY") {
+		t.Errorf("RequireEscrow(true) = %v, want the storage account required", err)
+	}
+	if strings.Contains(fmt.Sprintf("%v", err), "ed25519:secret") {
+		t.Error("error contains the private key")
+	}
+}
+
+func TestLoad_RequireEscrowListsMissing(t *testing.T) {
+	setRequired(t)
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	err = cfg.RequireEscrow(false)
+	for _, key := range []string{"NEAR_RPC_URL", "ESCROW_CONTRACT_ID", "ESCROW_FEE_BPS", "USDC_CONTRACT_ID", "APP_URL", "RELAYER_ACCOUNT_ID", "RELAYER_PRIVATE_KEY"} {
+		if err == nil || !strings.Contains(err.Error(), key) {
+			t.Errorf("error = %v, want %s", err, key)
+		}
+	}
+}
+
+func TestLoad_RejectsInvalidEscrowSettings(t *testing.T) {
+	for key, bad := range map[string]string{
+		"ESCROW_FEE_BPS":        "10001",
+		"RELAYER_MAX_GAS_TGAS":  "301",
+		"ONECLICK_SLIPPAGE_BPS": "-1",
+		"JOB_BATCH_SIZE":        "0",
+		"ESCROW_TERMS_TTL":      "0s",
+		"AUTH_GUEST_TOKEN_TTL":  "-1s",
+		"JOB_LEASE_TTL":         "0s",
+		"APP_URL":               "localhost:5173",
+		"NEAR_EXPLORER_TX_URL":  "explorer/txns/",
+		"ONECLICK_URL":          "1click.chaindefuser.com",
+	} {
+		t.Run(key, func(t *testing.T) {
+			setEscrow(t)
 			t.Setenv(key, bad)
 			if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), key) {
 				t.Fatalf("error = %v, want %s error", err, key)

@@ -13,17 +13,12 @@ import (
 	deliveryhttp "github.com/harundarat/vecrow/backend/internal/delivery/http"
 	"github.com/harundarat/vecrow/backend/internal/delivery/http/handler"
 	"github.com/harundarat/vecrow/backend/internal/infrastructure/database"
-	"github.com/harundarat/vecrow/backend/internal/infrastructure/nearrpc"
 	"github.com/harundarat/vecrow/backend/internal/repository"
 	"github.com/harundarat/vecrow/backend/internal/usecase"
 	"github.com/harundarat/vecrow/backend/internal/usecase/auth"
 )
 
-const (
-	readinessTimeout = 2 * time.Second
-	// nearRPCTimeout bounds each NEAR RPC call made while verifying a login.
-	nearRPCTimeout = 10 * time.Second
-)
+const readinessTimeout = 2 * time.Second
 
 var _ usecase.Transactor = (*database.Postgres)(nil)
 
@@ -40,9 +35,6 @@ func NewAPI(ctx context.Context, cfg config.Config, log *slog.Logger) (_ App, er
 	if cfg.Auth.Domain == "" {
 		return nil, errors.New("AUTH_DOMAIN is required for the api")
 	}
-	if cfg.NEAR.RPCURL == "" {
-		return nil, errors.New("NEAR_RPC_URL is required for the api")
-	}
 
 	a := &API{log: log, shutdownTimeout: cfg.HTTP.ShutdownTimeout, closers: closers{log: log}}
 	defer func() {
@@ -56,10 +48,14 @@ func NewAPI(ctx context.Context, cfg config.Config, log *slog.Logger) (_ App, er
 		return nil, err
 	}
 
-	nonceStore := repository.NewNonceStore(kv)
+	stack, err := newEscrowStack(cfg, db, kv, log, false)
+	if err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
+	nonceStore := stack.nonces
 	sessionStore := repository.NewSessionStore(kv)
 	accounts := repository.NewAccountRepository(db)
-	nearKeys := repository.NewNEARAccessKeys(nearrpc.New(cfg.NEAR.RPCURL, nearRPCTimeout))
+	nearKeys := stack.keys
 
 	nonceService := auth.NewNonceService(nonceStore, cfg.Auth.NonceTTL, cfg.Auth.Domain)
 	verifier := auth.NewWalletVerifier(cfg.Auth.Domain, nearKeys)
@@ -74,10 +70,14 @@ func NewAPI(ctx context.Context, cfg config.Config, log *slog.Logger) (_ App, er
 		},
 		log,
 		deliveryhttp.Handlers{
-			Health:   handler.NewHealthHandler(log, readinessTimeout, db, kv),
-			Auth:     handler.NewAuthHandler(nonceService, loginService),
-			Me:       handler.NewMeHandler(accountService),
+			Health: handler.NewHealthHandler(log, readinessTimeout, db, kv),
+			Auth:   handler.NewAuthHandler(nonceService, loginService),
+			Me:     handler.NewMeHandler(accountService),
+			Escrow: handler.NewEscrowHandler(stack.escrows, auth.NewWalletProver(nonceStore, verifier),
+				cfg.NEAR.ExplorerTxURL),
+			Funding:  handler.NewFundingHandler(stack.funding),
 			Sessions: sessionService,
+			Guests:   stack.guests,
 		},
 	)
 	if err != nil {
