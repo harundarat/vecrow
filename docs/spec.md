@@ -539,7 +539,7 @@ stateDiagram-v2
     PendingApproval --> Open: creator rejects / deadline passes
     PendingApproval --> Approved: creator signs
     Approved --> Created: create_escrow
-    Approved --> Open: create_escrow rejected
+    Approved --> Open: create_escrow rejected / terms expired
     Open --> Cancelled: cancel
     PendingApproval --> Cancelled: cancel
     Created --> Cancelled: cancel
