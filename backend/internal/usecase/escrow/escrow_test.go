@@ -757,3 +757,21 @@ func TestDecodeDelegate(t *testing.T) {
 		t.Fatalf("bad base64: %v", err)
 	}
 }
+
+func TestRenewGuestToken(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	esc := e.create(t, "freelancer")
+	approverWallet := domain.Wallet{Scheme: domain.SchemeEIP191, Address: clientEVM.Address()}
+	if _, _, err := e.svc.RenewGuestToken(ctx, esc.ID, approverWallet); !isKind(err, domain.ErrForbidden) {
+		t.Fatalf("renew before submitting: %v", err)
+	}
+	e.join(t, esc)
+	if _, _, err := e.svc.RenewGuestToken(ctx, esc.ID, domain.Wallet{Scheme: domain.SchemeNEP413, Address: freelancer}); !isKind(err, domain.ErrForbidden) {
+		t.Fatalf("renew by another wallet: %v", err)
+	}
+	token, _, err := e.svc.RenewGuestToken(ctx, esc.ID, approverWallet)
+	if err != nil || token == "" || len(e.guests.issued) != 2 || e.guests.issued[1].Wallet != approverWallet {
+		t.Fatalf("renew: %q, %v (%+v)", token, err, e.guests.issued)
+	}
+}

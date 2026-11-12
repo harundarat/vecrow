@@ -353,3 +353,21 @@ func (s *Service) cancelOffChain(ctx context.Context, accountID, id string) (dom
 	s.rt.log.InfoContext(ctx, "escrow cancelled before going on-chain", slog.String("escrow_id", id))
 	return s.get(ctx, id)
 }
+
+// RenewGuestToken issues a new guest token to the wallet that submitted the
+// escrow's active submission, once it has proven control of it with a
+// signature (R-21).
+func (s *Service) RenewGuestToken(ctx context.Context, id string, w domain.Wallet) (string, time.Time, error) {
+	e, err := s.get(ctx, id)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	if e.Submission == nil || e.Submission.Wallet != w {
+		return "", time.Time{}, domain.Forbidden("%s did not submit to this escrow", w.Address)
+	}
+	token, exp, err := s.Guests.Issue(ctx, id, w)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("escrow: issue guest token: %w", err)
+	}
+	return token, exp, nil
+}

@@ -200,3 +200,18 @@ func (t fakeTx) WithinTx(ctx context.Context, fn func(ctx context.Context) error
 	}
 	return nil
 }
+
+type guestMap map[string]domain.GuestToken
+
+func (m guestMap) Save(_ context.Context, key string, g domain.GuestToken, _ time.Duration) error {
+	m[key] = g
+	return nil
+}
+
+func (m guestMap) Get(_ context.Context, key string) (domain.GuestToken, error) {
+	g, ok := m[key]
+	if !ok {
+		return domain.GuestToken{}, auth.ErrGuestTokenNotFound
+	}
+	return g, nil
+}
