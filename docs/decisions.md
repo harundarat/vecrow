@@ -28,6 +28,11 @@ consequences, including the trade-offs we accept.
 | [D-18](#d-18--approver-and-refund-account-rules-cover-implicit-accounts-and-keys) | Approver and refund-account rules cover implicit accounts and keys | 2026-11-11 | Accepted | R-04 |
 | [D-19](#d-19--one-transfer-per-payout-paid-for-by-the-contract) | One transfer per payout, paid for by the contract | 2026-11-11 | Accepted | R-02, R-03, R-18, R-19, R-20 |
 | [D-20](#d-20--contract-toolchain-and-generated-wallet-fixtures) | Contract toolchain and generated wallet fixtures | 2026-11-11 | Accepted | R-06 |
+| [D-21](#d-21--escrows-before-the-chain-ids-deadlines-and-expiry) | Escrows before the chain: IDs, deadlines and expiry | 2026-11-12 | Accepted | R-16, R-23 |
+| [D-22](#d-22--guest-tokens-are-opaque-short-lived-and-only-read-or-fund) | Guest tokens are opaque, short-lived, and only read or fund | 2026-11-12 | Accepted | R-08, R-21 |
+| [D-23](#d-23--relayer-policy-and-backend-accounts) | Relayer policy and backend accounts | 2026-11-12 | Accepted | R-09, R-20, R-23 |
+| [D-24](#d-24--jobs-hold-a-lease-per-item-and-a-lock-per-escrow) | Jobs hold a lease per item and a lock per escrow | 2026-11-12 | Accepted | R-07, R-08, R-20, R-23 |
+| [D-25](#d-25--funding-success-is-read-from-the-contract-sent-transactions-are-recorded) | Funding success is read from the contract; sent transactions are recorded | 2026-11-12 | Accepted | R-08, R-09, R-20 |
 
 ---
 
@@ -529,3 +534,184 @@ can only be captured by hand from the browser extensions.
   limit to 65,535 at startup; where the hard limit is lower and cannot be raised,
   `make test-sandbox` preloads a small shim that clamps the request (README).
 
+
+## D-21 — Escrows before the chain: IDs, deadlines and expiry
+
+**Context.** R-23 keeps escrows in the backend until both parties have signed. The
+terms carry an escrow ID and a deadline that the contract checks, and an approved
+escrow can still fail to reach the chain. None of this is fixed by D-14.
+
+**Decision.** (R-16, R-23)
+- The escrow ID is a random UUID v4, generated when the creator calls `POST /escrows`.
+  It is the contract's `escrow_id`, the 1Click `customRecipientMsg`, and part of the link
+  `APP_URL/escrows/{id}`. Knowing the ID gives no right: it only shows the escrow and
+  lets anyone submit, as R-23 requires.
+- The deadline of the terms is the time they are built plus `ESCROW_TERMS_TTL` (24 hours
+  by default). A submission is accepted only with a deadline in the future and at most
+  `ESCROW_TERMS_TTL` + 1 minute away, so the other party cannot sign terms that stay
+  valid for longer.
+- `Open`, `PendingApproval` and `Approved` are stored in PostgreSQL with the submission,
+  the exact message both parties sign, and both signatures. The backend never rebuilds
+  or edits the terms after the other party signed: the creator signs the stored message,
+  and the job sends that message's terms.
+- Both signatures are checked by the backend before they are stored, and again by the
+  contract.
+- An `Approved` escrow whose deadline passed is reopened only after
+  `ESCROW_EXPIRY_GRACE` (5 minutes by default), and only if `get_escrow` still has no
+  escrow, so a `create_escrow` sent just before the deadline is never mistaken for a
+  failure. A `PendingApproval` submission expires at its deadline.
+- `fee_bps` comes from `ESCROW_FEE_BPS`, because the contract has no view that returns
+  its configuration. A wrong value only makes `create_escrow` fail (D-15), and the
+  escrow returns to `Open`.
+- "My escrows" (R-16) gives the member role only for split shares other than the
+  freelancer's own, and lists at most 200 escrows per account.
+
+**Alternatives.**
+- Sequential or hash-derived IDs: guessable, or tied to terms that are not known when
+  the link is created.
+- Let the creator pick the deadline: a very long deadline would keep a stale signature
+  usable.
+
+**Consequences.**
+- A creator who waits more than `ESCROW_TERMS_TTL` to approve makes the other party sign
+  again.
+- `ESCROW_FEE_BPS` must be changed together with a contract redeploy.
+
+## D-22 — Guest tokens are opaque, short-lived, and only read or fund
+
+**Context.** R-21 lets the other party join without an account. They still need to see
+the escrow and, as client, request quotes and follow funding. D-08 says sessions never
+grant contract rights; the same must hold for guest tokens.
+
+**Decision.** (R-08, R-21)
+- A guest token is 32 random bytes, returned once. Redis stores only its SHA-256 with the
+  escrow ID and the submitting wallet, for `AUTH_GUEST_TOKEN_TTL` (24 hours by default).
+- It is sent in the `X-Guest-Token` header, not in `Authorization`, so a browser can send
+  a session and a guest token together.
+- `POST /escrows/:id/guest-token` renews it: the wallet that submitted signs a login
+  challenge from `POST /auth/nonce` (D-13). No account is created.
+- Quotes and funding status require the approver: a guest token of this escrow whose
+  wallet is the approver, or a session whose account owns the approver wallet. Without
+  either the answer is 401; a token or session for another wallet gets 403; a token for
+  another escrow is not valid credentials (401).
+- Approvals, revisions, cancellations and the terms are proven by signatures checked by
+  the contract; the token is never used for them.
+
+**Alternatives.**
+- Signed tokens (JWT): cannot be revoked before they expire, and would add a signing key.
+- Ask for a signature on every read: one wallet popup per page load.
+
+**Consequences.**
+- A leaked token shows the escrow and the deposit address for at most a day; it cannot
+  move funds or change where they go.
+
+## D-23 — Relayer policy and backend accounts
+
+**Context.** R-09 has the backend pay gas so that freelancer and client need 0 NEAR. A
+relayer that forwards anything signed is a free gas tap and a way to spend the
+backend's NEAR on other contracts. R-20 also has the backend pay for storage.
+
+**Decision.** (R-09, R-20, R-23)
+- Two backend accounts, each with its own key from the environment: the relayer
+  (`RELAYER_ACCOUNT_ID`, `RELAYER_PRIVATE_KEY`) signs every transaction to the escrow
+  contract, and the storage account (`STORAGE_ACCOUNT_ID`, `STORAGE_PRIVATE_KEY`) pays
+  `storage_deposit`. Only the worker holds the storage key.
+- A NEP-366 `SignedDelegateAction` from the freelancer is relayed only if: the receiver is
+  the escrow contract; it holds exactly one `FunctionCall`; the method is the one of the
+  endpoint (`submit_milestone`, `refund_unsubmitted` or `cancel`); the deposit is 0; the
+  gas is positive and at most `RELAYER_MAX_GAS_TGAS` (100 TGas by default); the sender is
+  the escrow's freelancer; the arguments are a JSON object with only that method's keys,
+  for this escrow (and milestone); and the signature is valid. Anything else is rejected
+  with 403 or 400 before a transaction is sent.
+- Approver payloads (`approve_milestone`, `request_revision`, `cancel`) and
+  `create_escrow` are sent as function calls from the relayer account. The approver's
+  signature is checked by the backend first, so invalid signatures cost no gas; the
+  contract checks it again.
+- Storage is registered with `storage_deposit(registration_only = true)` for
+  `storage_balance_bounds().min`, only for accounts that `storage_balance_of` reports as
+  unregistered: the split recipients and `refund_account` before `create_escrow`, and the
+  payee before `retry_payout`.
+- Transaction nonces are claimed in Redis, so the api and the worker can share the
+  relayer key without nonce collisions. A transaction that is sent but whose outcome is
+  unknown after the wait is answered with 503; the jobs read the contract before
+  retrying.
+
+**Alternatives.**
+- One backend account for everything: a single key to protect, but the HTTP-facing api
+  would hold the key that spends NEAR on storage for anyone's account.
+- Relay any delegate action to the contract and let the contract reject it: still
+  burns relayer gas on every rejected call.
+
+**Consequences.**
+- Both accounts must keep a NEAR balance and be monitored.
+- A new relayed method needs a code change to the allow-list.
+
+## D-24 — Jobs hold a lease per item and a lock per escrow
+
+**Context.** The scheduler finds due work every few seconds, RabbitMQ delivers at least
+once, and several workers may run. Without care the same `create_escrow` or
+`retry_payout` would be queued and sent many times, and two jobs could send
+transactions for the same escrow at once.
+
+**Decision.** (R-07, R-08, R-20, R-23)
+- The scheduler publishes one message per due item (approved escrow, submitted milestone
+  past its window, pending payout, escrow to sync, watched quote) only after taking a Redis
+  lease `jobs:lease:<topic>:<item>` for `JOB_LEASE_TTL`. The job frees the lease when it
+  completes; a failed job keeps it until it expires, and RabbitMQ retries the message
+  meanwhile. A publish failure frees the lease at once.
+- Jobs that send transactions (`create_escrow`, `auto_release`, `retry_payout`) also take
+  `jobs:lock:escrow:<id>` for their whole run. If it is held, the message is retried
+  later. The lock outlives the handler timeout and the transaction wait.
+- Each job reads the contract before it acts, so a repeated job has no effect: an escrow
+  already on-chain is marked `Created`, a released milestone or a paid payout is skipped.
+- A job for an escrow or quote that no longer exists is dropped.
+- Escrows on-chain are refreshed from `get_escrow` every `JOB_SYNC_INTERVAL`, and
+  watched quotes from 1Click every `JOB_FUNDING_INTERVAL`. A snapshot from an older block
+  never overwrites a newer one.
+
+**Alternatives.**
+- Only rely on the contract rejecting repeated calls: correct, but each repeat costs
+  gas.
+- A PostgreSQL `SELECT … FOR UPDATE SKIP LOCKED` job table: one less moving part, but
+  the queue already provides retries, delays and dead letters (D-12).
+
+**Consequences.**
+- If Redis loses the leases, items are published again and the contract reads keep the
+  jobs idempotent.
+- A stuck job delays other transactions of the same escrow by at most the lock TTL.
+
+## D-25 — Funding success is read from the contract; sent transactions are recorded
+
+**Context.** 1Click reports the swap; the contract holds the money. The dashboard and
+the CSV export need transaction links and pending payouts, which the contract does not
+index.
+
+**Decision.** (R-08, R-09, R-20)
+- Quotes are `EXACT_OUTPUT` for the escrow total, to the contract, with the escrow ID as
+  `customRecipientMsg`, and expire after `ONECLICK_QUOTE_TTL`. A quote whose `amountOut`
+  is not the total is refused (503).
+- The funding status shown is `SUCCESS` once `get_escrow` says `Funded` or later,
+  whatever 1Click reports. 1Click `SUCCESS` and `REFUNDED` map to `SUCCESS` and
+  `REFUNDED`; every other status, `FAILED` included, is `PENDING` with the raw status
+  next to it, because the client can request a new quote. The watcher stops at
+  `SUCCESS`, `REFUNDED` or `FAILED`, or `ONECLICK_WATCH_GRACE` after the quote's
+  deadline. `GET /escrows/:id/funding` asks 1Click itself only when the stored status is
+  older than `ONECLICK_REFRESH_AFTER`.
+- Every transaction the backend sends is stored with its hash, signer, sender (the
+  freelancer for delegate actions), receiver, method, result, and the NEP-297 events the
+  contract logged in successful receipts. `GET /escrows/:id` shows them with an explorer
+  link (`NEAR_EXPLORER_TX_URL` + hash) and the pending payouts from `get_escrow`, which it
+  refreshes from the contract when it can.
+- The 1Click token list is cached for `ONECLICK_TOKENS_TTL`. 1Click outages are answered
+  with 503; nothing falls back to another route (D-09 stays out of scope).
+
+**Alternatives.**
+- Trust 1Click's `SUCCESS`: a swap could succeed while `ft_on_transfer` rejected the
+  deposit (wrong status or amount).
+- Index transactions from an indexer: another service to run, for data the backend
+  already has when it sends.
+
+**Consequences.**
+- Transactions the backend did not send (for example a direct `ft_transfer_call` or an
+  `auto_release` called by someone else) are not in the list; their effects still show
+  through `get_escrow`.
