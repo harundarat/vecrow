@@ -71,10 +71,10 @@ export function NavHeader() {
       <div className="flex flex-1 items-center gap-4 border-primary/10 px-4 md:border-l">
         <Button
           variant={"primary-light"}
+          nativeButton={false}
           className={"ml-auto hidden px-5 md:flex"}
-        >
-          Sign in
-        </Button>
+          render={<Link href={"/sign-in"}>Sign in</Link>}
+        />
         <MobileMenuDrawer />
       </div>
     </header>
@@ -125,7 +125,12 @@ function MobileMenuDrawer() {
           ))}
         </div>
         <DrawerFooter>
-          <Button>Sign in</Button>
+          <Button
+            nativeButton={false}
+            render={<Link href={"/sign-in"}>Sign in</Link>}
+          >
+            Sign in
+          </Button>
         </DrawerFooter>
       </DrawerContent>
     </Drawer>
