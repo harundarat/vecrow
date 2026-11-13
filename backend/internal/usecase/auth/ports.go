@@ -16,6 +16,8 @@ var (
 	ErrAccountNotFound = errors.New("auth: account not found")
 	ErrWalletNotFound  = errors.New("auth: wallet not found")
 	ErrUsernameTaken   = errors.New("auth: username taken")
+	ErrEmailTaken      = errors.New("auth: email taken")
+	ErrOTPNotFound     = errors.New("auth: one-time code not found")
 )
 
 // NonceStore keeps issued nonces until they are used or expire.
@@ -59,6 +61,55 @@ type AccountRepository interface {
 	CountWallets(ctx context.Context, accountID string) (int, error)
 	// UnlinkWallet deletes the account's wallet and reports whether it existed.
 	UnlinkWallet(ctx context.Context, accountID, walletID string) (bool, error)
+	// FindAccountByEmail returns the ID of the account whose verified email
+	// is email, or ErrAccountNotFound. Pending emails never match.
+	FindAccountByEmail(ctx context.Context, email string) (string, error)
+	// SetPendingEmail records the email waiting for its code; "" clears it.
+	// It returns ErrAccountNotFound.
+	SetPendingEmail(ctx context.Context, accountID, email string) error
+	// ConfirmEmail makes the pending email the verified email if it is still
+	// email, and reports false when it is not. It returns ErrEmailTaken when
+	// another account has verified the same email.
+	ConfirmEmail(ctx context.Context, accountID, email string) (bool, error)
+	// ClearEmail removes the verified and the pending email.
+	ClearEmail(ctx context.Context, accountID string) error
+}
+
+// OTPRecord is an issued one-time code (R-14, R-22). The code itself is not
+// stored: only an HMAC of it keyed by a random salt.
+type OTPRecord struct {
+	// AccountID is the account the code was issued for.
+	AccountID string
+	// Email is the address the code was sent to.
+	Email     string
+	Salt      []byte
+	MAC       []byte
+	ExpiresAt time.Time
+}
+
+// OTPStore keeps one-time codes by purpose ("email" verification or "login")
+// and subject (an account ID or an email), with a count of attempts.
+type OTPStore interface {
+	// Save stores rec for ttl, replacing an earlier code of the subject and
+	// resetting its attempt count.
+	Save(ctx context.Context, purpose, subject string, rec OTPRecord, ttl time.Duration) error
+	// Get returns ErrOTPNotFound for unknown or expired codes.
+	Get(ctx context.Context, purpose, subject string) (OTPRecord, error)
+	// Consume returns the code and deletes it and its attempt count in one
+	// step, so a code is used once; ErrOTPNotFound if it is already gone.
+	Consume(ctx context.Context, purpose, subject string) (OTPRecord, error)
+	// CountAttempt counts one attempt at the subject's code and returns the
+	// attempts so far. A new count expires after ttl.
+	CountAttempt(ctx context.Context, purpose, subject string, ttl time.Duration) (int, error)
+	// Delete removes the code, keeping its attempt count.
+	Delete(ctx context.Context, purpose, subject string) error
+}
+
+// RateLimiter counts events per key in fixed windows.
+type RateLimiter interface {
+	// Allow counts one event for key and reports whether the events of the
+	// current window are within limit.
+	Allow(ctx context.Context, key string, limit int, window time.Duration) (bool, error)
 }
 
 // AccessKeyStatus says how a public key relates to a NEAR account.

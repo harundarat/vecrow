@@ -70,3 +70,29 @@ func TestRedis_Store(t *testing.T) {
 		t.Fatalf("Check: %v", err)
 	}
 }
+
+func TestRedis_Incr(t *testing.T) {
+	ctx := context.Background()
+	r := openRedis(t)
+	key := "it:incr:" + uuid.NewString()
+	t.Cleanup(func() { _ = r.Delete(ctx, key) })
+
+	for want := int64(1); want <= 3; want++ {
+		n, err := r.Incr(ctx, key, 300*time.Millisecond)
+		if err != nil || n != want {
+			t.Fatalf("Incr = %d, %v; want %d", n, err, want)
+		}
+	}
+	// Later increments do not extend the expiry set by the first one.
+	time.Sleep(200 * time.Millisecond)
+	if _, err := r.Incr(ctx, key, 300*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if n, err := r.Incr(ctx, key, time.Minute); err != nil || n != 1 {
+		t.Fatalf("Incr after expiry = %d, %v; want 1", n, err)
+	}
+	if _, err := r.Incr(ctx, key, 0); err == nil {
+		t.Fatal("Incr accepted a zero ttl")
+	}
+}

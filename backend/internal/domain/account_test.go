@@ -42,6 +42,38 @@ func TestParseUsername(t *testing.T) {
 	}
 }
 
+func TestParseEmail(t *testing.T) {
+	tests := []struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{in: "bob@example.com", want: "bob@example.com"},
+		{in: "  Bob.Smith+vecrow@Example.COM ", want: "bob.smith+vecrow@example.com"},
+		{in: "", wantErr: true},
+		{in: "bob", wantErr: true},
+		{in: "bob@localhost", wantErr: true},
+		{in: "@example.com", wantErr: true},
+		{in: "Bob <bob@example.com>", wantErr: true},
+		{in: "bob@example.com\r\nbcc: eve@example.com", wantErr: true},
+		{in: "bob smith@example.com", wantErr: true},
+		{in: "bob@[127.0.0.1]", wantErr: true},
+		{in: strings.Repeat("a", 250) + "@x.io", wantErr: true},
+	}
+	for _, tt := range tests {
+		got, err := domain.ParseEmail(tt.in)
+		if tt.wantErr {
+			if !errors.Is(err, domain.ErrInvalidArgument) {
+				t.Errorf("ParseEmail(%q) = %q, %v; want ErrInvalidArgument", tt.in, got, err)
+			}
+			continue
+		}
+		if err != nil || got != tt.want {
+			t.Errorf("ParseEmail(%q) = %q, %v; want %q", tt.in, got, err, tt.want)
+		}
+	}
+}
+
 func TestDecodeNonce(t *testing.T) {
 	got, err := domain.DecodeNonce(strings.Repeat("ab", 32))
 	if err != nil {

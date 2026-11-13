@@ -57,10 +57,12 @@ func (r *AccountRepository) GetAccount(ctx context.Context, id string) (domain.A
 		return domain.Account{}, fmt.Errorf("account repository: list wallets: %w", err)
 	}
 	account := domain.Account{
-		ID:        row.ID.String(),
-		Username:  row.Username,
-		CreatedAt: row.CreatedAt,
-		Wallets:   make([]domain.LinkedWallet, len(wallets)),
+		ID:           row.ID.String(),
+		Username:     row.Username,
+		Email:        deref(row.Email),
+		PendingEmail: deref(row.PendingEmail),
+		CreatedAt:    row.CreatedAt,
+		Wallets:      make([]domain.LinkedWallet, len(wallets)),
 	}
 	for i, w := range wallets {
 		account.Wallets[i] = domain.LinkedWallet{
@@ -178,6 +180,63 @@ func (r *AccountRepository) UnlinkWallet(ctx context.Context, accountID, walletI
 		return false, fmt.Errorf("account repository: delete wallet: %w", err)
 	}
 	return n > 0, nil
+}
+
+func (r *AccountRepository) FindAccountByEmail(ctx context.Context, email string) (string, error) {
+	id, err := r.q(ctx).GetAccountIDByEmail(ctx, &email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", auth.ErrAccountNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("account repository: get account by email: %w", err)
+	}
+	return id.String(), nil
+}
+
+func (r *AccountRepository) SetPendingEmail(ctx context.Context, accountID, email string) error {
+	uid, err := uuid.Parse(accountID)
+	if err != nil {
+		return auth.ErrAccountNotFound
+	}
+	n, err := r.q(ctx).SetPendingEmail(ctx, dbgen.SetPendingEmailParams{ID: uid, PendingEmail: nullable(email)})
+	if err != nil {
+		return fmt.Errorf("account repository: set pending email: %w", err)
+	}
+	if n == 0 {
+		return auth.ErrAccountNotFound
+	}
+	return nil
+}
+
+func (r *AccountRepository) ConfirmEmail(ctx context.Context, accountID, email string) (bool, error) {
+	uid, err := uuid.Parse(accountID)
+	if err != nil {
+		return false, nil
+	}
+	n, err := r.q(ctx).ConfirmEmail(ctx, dbgen.ConfirmEmailParams{ID: uid, PendingEmail: &email})
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
+		return false, auth.ErrEmailTaken
+	}
+	if err != nil {
+		return false, fmt.Errorf("account repository: confirm email: %w", err)
+	}
+	return n > 0, nil
+}
+
+func (r *AccountRepository) ClearEmail(ctx context.Context, accountID string) error {
+	uid, err := uuid.Parse(accountID)
+	if err != nil {
+		return auth.ErrAccountNotFound
+	}
+	n, err := r.q(ctx).ClearEmail(ctx, uid)
+	if err != nil {
+		return fmt.Errorf("account repository: clear email: %w", err)
+	}
+	if n == 0 {
+		return auth.ErrAccountNotFound
+	}
+	return nil
 }
 
 // IsWalletOwner reports whether w is linked to the account.

@@ -74,6 +74,8 @@ func classify(err error) (status int, code, message string) {
 		return http.StatusForbidden, CodeForbidden, de.Message
 	case errors.Is(de.Kind, domain.ErrUnavailable):
 		return http.StatusServiceUnavailable, CodeUnavailable, de.Message
+	case errors.Is(de.Kind, domain.ErrTooManyRequests):
+		return http.StatusTooManyRequests, CodeTooManyRequests, de.Message
 	default:
 		return http.StatusInternalServerError, CodeInternal, "internal server error"
 	}

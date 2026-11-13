@@ -11,10 +11,13 @@ import (
 )
 
 type Account struct {
-	ID        uuid.UUID
-	Username  string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID              uuid.UUID
+	Username        string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	Email           *string
+	EmailVerifiedAt *time.Time
+	PendingEmail    *string
 }
 
 type Escrow struct {

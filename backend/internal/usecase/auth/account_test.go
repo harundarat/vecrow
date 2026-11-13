@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/harundarat/vecrow/backend/internal/domain"
 	"github.com/harundarat/vecrow/backend/internal/usecase/auth"
@@ -15,12 +16,23 @@ type accountFixture struct {
 	nonces   nonceMap
 	verifier *fakeVerifier
 	accounts *fakeAccounts
+	otps     otpMap
+	limiter  fakeLimiter
+	mailer   *fakeMailer
+	now      time.Time
 	svc      *auth.AccountService
 }
 
-func newAccountFixture() *accountFixture {
-	f := &accountFixture{nonces: nonceMap{}, verifier: &fakeVerifier{}, accounts: newFakeAccounts()}
-	f.svc = auth.NewAccountService(f.nonces, f.verifier, f.accounts, fakeTx{f.accounts})
+func newAccountFixture(opts ...auth.Option) *accountFixture {
+	f := &accountFixture{
+		nonces: nonceMap{}, verifier: &fakeVerifier{}, accounts: newFakeAccounts(),
+		otps: otpMap{}, limiter: fakeLimiter{}, mailer: &fakeMailer{}, now: fixedNow,
+	}
+	clock := auth.WithClock(func() time.Time { return f.now })
+	otps := auth.NewOTPService(f.otps, f.limiter, f.mailer, auth.OTPConfig{RateLimit: 3, RateWindow: time.Hour},
+		append([]auth.Option{clock}, opts...)...)
+	f.svc = auth.NewAccountService(f.nonces, f.verifier, f.accounts, fakeTx{f.accounts}, otps, f.mailer,
+		append([]auth.Option{clock}, opts...)...)
 	return f
 }
 
@@ -66,13 +78,13 @@ func TestAccount_LinkWallet(t *testing.T) {
 	f := newAccountFixture()
 	id := f.accounts.add("alice", testWallet)
 
-	got, linked, err := f.svc.LinkWallet(context.Background(), id, f.issue(solanaWallet))
+	got, linked, err := f.svc.LinkWallet(context.Background(), domain.Session{AccountID: id}, f.issue(solanaWallet))
 	if err != nil || !linked || len(got.Wallets) != 2 {
 		t.Fatalf("LinkWallet = %+v, %v, %v; want 2 wallets", got, linked, err)
 	}
 
 	t.Run("already linked to this account is idempotent", func(t *testing.T) {
-		got, linked, err := f.svc.LinkWallet(context.Background(), id, f.issue(solanaWallet))
+		got, linked, err := f.svc.LinkWallet(context.Background(), domain.Session{AccountID: id}, f.issue(solanaWallet))
 		if err != nil || linked || len(got.Wallets) != 2 {
 			t.Fatalf("LinkWallet = %+v, %v, %v", got, linked, err)
 		}
@@ -80,7 +92,7 @@ func TestAccount_LinkWallet(t *testing.T) {
 	t.Run("owned by another account", func(t *testing.T) {
 		other := domain.Wallet{Scheme: domain.SchemeNEP413, Address: "bob.near"}
 		f.accounts.add("bob", other)
-		_, _, err := f.svc.LinkWallet(context.Background(), id, f.issue(other))
+		_, _, err := f.svc.LinkWallet(context.Background(), domain.Session{AccountID: id}, f.issue(other))
 		if !errors.Is(err, domain.ErrConflict) {
 			t.Fatalf("error = %v, want ErrConflict", err)
 		}
@@ -89,7 +101,7 @@ func TestAccount_LinkWallet(t *testing.T) {
 		other := domain.Wallet{Scheme: domain.SchemeNEP413, Address: "dave.near"}
 		f.accounts.add("dave", other)
 		f.accounts.hideOwnerOnce = true
-		_, _, err := f.svc.LinkWallet(context.Background(), id, f.issue(other))
+		_, _, err := f.svc.LinkWallet(context.Background(), domain.Session{AccountID: id}, f.issue(other))
 		if !errors.Is(err, domain.ErrConflict) {
 			t.Fatalf("error = %v, want ErrConflict after the retry", err)
 		}
@@ -98,7 +110,7 @@ func TestAccount_LinkWallet(t *testing.T) {
 		f.verifier.err = domain.Unauthorized("signature is invalid")
 		defer func() { f.verifier.err = nil }()
 		w := domain.Wallet{Scheme: domain.SchemeNEP413, Address: "carol.near"}
-		if _, _, err := f.svc.LinkWallet(context.Background(), id, f.issue(w)); !errors.Is(err, domain.ErrUnauthorized) {
+		if _, _, err := f.svc.LinkWallet(context.Background(), domain.Session{AccountID: id}, f.issue(w)); !errors.Is(err, domain.ErrUnauthorized) {
 			t.Fatalf("error = %v, want ErrUnauthorized", err)
 		}
 		if _, err := f.accounts.FindWalletOwner(context.Background(), w); !errors.Is(err, auth.ErrWalletNotFound) {

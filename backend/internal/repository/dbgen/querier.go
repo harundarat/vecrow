@@ -11,11 +11,15 @@ import (
 )
 
 type Querier interface {
+	ClearEmail(ctx context.Context, id uuid.UUID) (int64, error)
+	ConfirmEmail(ctx context.Context, arg ConfirmEmailParams) (int64, error)
 	CountWallets(ctx context.Context, accountID uuid.UUID) (int64, error)
 	DeleteParties(ctx context.Context, escrowID string) error
 	DeletePendingPayouts(ctx context.Context, escrowID string) error
 	DeleteWallet(ctx context.Context, arg DeleteWalletParams) (int64, error)
 	GetAccount(ctx context.Context, id uuid.UUID) (GetAccountRow, error)
+	GetAccountIDByEmail(ctx context.Context, email *string) (uuid.UUID, error)
+	GetAccountIDByUsername(ctx context.Context, username string) (uuid.UUID, error)
 	GetActiveSubmission(ctx context.Context, escrowID string) (EscrowSubmission, error)
 	GetEscrow(ctx context.Context, id string) (Escrow, error)
 	GetFundingQuote(ctx context.Context, id uuid.UUID) (FundingQuote, error)
@@ -61,6 +65,7 @@ type Querier interface {
 	ListWatchedQuotes(ctx context.Context, arg ListWatchedQuotesParams) ([]uuid.UUID, error)
 	LockAccount(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	LockEscrow(ctx context.Context, id string) (Escrow, error)
+	SetPendingEmail(ctx context.Context, arg SetPendingEmailParams) (int64, error)
 	// Stores a get_escrow snapshot unless a newer one is stored. Returns no row
 	// when the stored snapshot was read at a higher block.
 	UpdateEscrowChain(ctx context.Context, arg UpdateEscrowChainParams) (string, error)

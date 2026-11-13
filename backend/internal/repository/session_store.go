@@ -29,10 +29,13 @@ func NewSessionStore(c cache.Store) *SessionStore {
 type sessionRecord struct {
 	AccountID string    `json:"account_id"`
 	ExpiresAt time.Time `json:"expires_at"`
+	// Recovery is absent from sessions stored before email recovery existed,
+	// which were all wallet sessions.
+	Recovery bool `json:"recovery,omitempty"`
 }
 
 func (s *SessionStore) Save(ctx context.Context, key string, sess domain.Session, ttl time.Duration) error {
-	b, err := json.Marshal(sessionRecord{AccountID: sess.AccountID, ExpiresAt: sess.ExpiresAt})
+	b, err := json.Marshal(sessionRecord{AccountID: sess.AccountID, ExpiresAt: sess.ExpiresAt, Recovery: sess.Recovery})
 	if err != nil {
 		return fmt.Errorf("session store: encode: %w", err)
 	}
@@ -54,7 +57,7 @@ func (s *SessionStore) Get(ctx context.Context, key string) (domain.Session, err
 	if err := json.Unmarshal(b, &rec); err != nil {
 		return domain.Session{}, fmt.Errorf("session store: decode: %w", err)
 	}
-	return domain.Session{AccountID: rec.AccountID, ExpiresAt: rec.ExpiresAt}, nil
+	return domain.Session{AccountID: rec.AccountID, ExpiresAt: rec.ExpiresAt, Recovery: rec.Recovery}, nil
 }
 
 func (s *SessionStore) Delete(ctx context.Context, key string) error {

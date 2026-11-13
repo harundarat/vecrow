@@ -8,8 +8,33 @@ ON CONFLICT (username) DO NOTHING
 RETURNING id;
 
 -- name: GetAccount :one
-SELECT id, username, created_at
+SELECT id, username, email, pending_email, created_at
 FROM accounts
+WHERE id = $1;
+
+-- name: GetAccountIDByEmail :one
+SELECT id
+FROM accounts
+WHERE email = $1;
+
+-- name: GetAccountIDByUsername :one
+SELECT id
+FROM accounts
+WHERE username = $1;
+
+-- name: SetPendingEmail :execrows
+UPDATE accounts
+SET pending_email = sqlc.narg(pending_email), updated_at = now()
+WHERE id = $1;
+
+-- name: ConfirmEmail :execrows
+UPDATE accounts
+SET email = pending_email, email_verified_at = now(), pending_email = NULL, updated_at = now()
+WHERE id = $1 AND pending_email = $2;
+
+-- name: ClearEmail :execrows
+UPDATE accounts
+SET email = NULL, email_verified_at = NULL, pending_email = NULL, updated_at = now()
 WHERE id = $1;
 
 -- name: LockAccount :one

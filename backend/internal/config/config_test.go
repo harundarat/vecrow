@@ -24,7 +24,8 @@ var configKeys = []string{
 	"STORAGE_PRIVATE_KEY", "ONECLICK_URL", "ONECLICK_API_KEY", "ONECLICK_SLIPPAGE_BPS", "ONECLICK_QUOTE_TTL",
 	"ONECLICK_WATCH_GRACE", "ONECLICK_REFRESH_AFTER", "ONECLICK_TOKENS_TTL", "JOB_SYNC_INTERVAL",
 	"JOB_FUNDING_INTERVAL", "JOB_BATCH_SIZE", "JOB_LEASE_TTL", "SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME",
-	"SMTP_PASSWORD", "SMTP_TLS", "SMTP_TIMEOUT", "SMTP_FROM",
+	"SMTP_PASSWORD", "SMTP_TLS", "SMTP_TIMEOUT", "SMTP_FROM", "AUTH_RECOVERY_SESSION_TTL",
+	"AUTH_OTP_RATE_LIMIT", "AUTH_OTP_RATE_WINDOW",
 }
 
 func clearEnv(t *testing.T) {
@@ -282,6 +283,29 @@ func TestLoad_Mail(t *testing.T) {
 		"SMTP_PORT":    "0",
 		"SMTP_TLS":     "ssl",
 		"SMTP_TIMEOUT": "0s",
+	} {
+		t.Run(key, func(t *testing.T) {
+			t.Setenv(key, val)
+			if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), key) {
+				t.Errorf("Load with %s=%q error = %v, want one naming %s", key, val, err, key)
+			}
+		})
+	}
+}
+
+func TestLoad_EmailAuth(t *testing.T) {
+	setRequired(t)
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Auth.RecoverySessionTTL != time.Hour || cfg.Auth.OTPRateLimit != 5 || cfg.Auth.OTPRateWindow != time.Hour {
+		t.Errorf("email auth defaults = %+v", cfg.Auth)
+	}
+	for key, val := range map[string]string{
+		"AUTH_RECOVERY_SESSION_TTL": "0s",
+		"AUTH_OTP_RATE_LIMIT":       "0",
+		"AUTH_OTP_RATE_WINDOW":      "-1m",
 	} {
 		t.Run(key, func(t *testing.T) {
 			t.Setenv(key, val)

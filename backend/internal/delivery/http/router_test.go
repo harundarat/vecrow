@@ -41,12 +41,13 @@ func (f fakeChecker) Name() string                { return f.name }
 func (f fakeChecker) Check(context.Context) error { return f.err }
 
 type testServer struct {
-	engine   *gin.Engine
-	logs     *bytes.Buffer
-	login    *fakeLogin
-	accounts *fakeAccountUseCase
-	escrows  *fakeEscrows
-	funding  *fakeFunding
+	engine     *gin.Engine
+	logs       *bytes.Buffer
+	login      *fakeLogin
+	emailLogin *fakeEmailLogin
+	accounts   *fakeAccountUseCase
+	escrows    *fakeEscrows
+	funding    *fakeFunding
 }
 
 func newTestServer(t *testing.T, issuer fakeIssuer, checkers ...handler.Checker) *testServer {
@@ -56,14 +57,14 @@ func newTestServer(t *testing.T, issuer fakeIssuer, checkers ...handler.Checker)
 	if err != nil {
 		t.Fatal(err)
 	}
-	login, accounts := &fakeLogin{}, &fakeAccountUseCase{}
+	login, emailLogin, accounts := &fakeLogin{}, &fakeEmailLogin{}, &fakeAccountUseCase{}
 	escrows, fundingUC := &fakeEscrows{}, &fakeFunding{}
 	engine, err := deliveryhttp.NewRouter(
 		deliveryhttp.RouterConfig{CORSAllowedOrigins: []string{"http://localhost:5173"}},
 		log,
 		deliveryhttp.Handlers{
 			Health:   handler.NewHealthHandler(log, time.Second, checkers...),
-			Auth:     handler.NewAuthHandler(issuer, login),
+			Auth:     handler.NewAuthHandler(issuer, login, emailLogin),
 			Me:       handler.NewMeHandler(accounts),
 			Escrow:   handler.NewEscrowHandler(escrows, fakeProver{}, explorerTxURL),
 			Funding:  handler.NewFundingHandler(fundingUC),
@@ -74,7 +75,8 @@ func newTestServer(t *testing.T, issuer fakeIssuer, checkers ...handler.Checker)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &testServer{engine: engine, logs: &logs, login: login, accounts: accounts, escrows: escrows, funding: fundingUC}
+	return &testServer{engine: engine, logs: &logs, login: login, emailLogin: emailLogin, accounts: accounts,
+		escrows: escrows, funding: fundingUC}
 }
 
 func (s *testServer) do(method, path, body string, headers ...string) *httptest.ResponseRecorder {
@@ -325,7 +327,7 @@ func TestNewRouter_MalformedCORSOriginIsAnError(t *testing.T) {
 		log,
 		deliveryhttp.Handlers{
 			Health:   handler.NewHealthHandler(log, time.Second),
-			Auth:     handler.NewAuthHandler(fakeIssuer{}, &fakeLogin{}),
+			Auth:     handler.NewAuthHandler(fakeIssuer{}, &fakeLogin{}, &fakeEmailLogin{}),
 			Me:       handler.NewMeHandler(&fakeAccountUseCase{}),
 			Sessions: fakeSessions{},
 		},

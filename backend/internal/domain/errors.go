@@ -18,6 +18,9 @@ var (
 	// ErrUnavailable: a dependency such as the NEAR chain did not answer in
 	// time; the request may be retried.
 	ErrUnavailable = errors.New("unavailable")
+	// ErrTooManyRequests: a per-subject limit (such as one-time codes per
+	// email) was reached; the request may be retried later.
+	ErrTooManyRequests = errors.New("too many requests")
 )
 
 // Error is a business error with a message that is safe to show to clients.
@@ -48,3 +51,7 @@ func Unauthorized(format string, args ...any) error {
 func Forbidden(format string, args ...any) error { return newError(ErrForbidden, format, args...) }
 
 func Unavailable(format string, args ...any) error { return newError(ErrUnavailable, format, args...) }
+
+func TooManyRequests(format string, args ...any) error {
+	return newError(ErrTooManyRequests, format, args...)
+}

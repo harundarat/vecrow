@@ -35,6 +35,9 @@ func NewAPI(ctx context.Context, cfg config.Config, log *slog.Logger) (_ App, er
 	if cfg.Auth.Domain == "" {
 		return nil, errors.New("AUTH_DOMAIN is required for the api")
 	}
+	if err := cfg.RequireMail(); err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
 
 	a := &API{log: log, shutdownTimeout: cfg.HTTP.ShutdownTimeout, closers: closers{log: log}}
 	defer func() {
@@ -57,11 +60,20 @@ func NewAPI(ctx context.Context, cfg config.Config, log *slog.Logger) (_ App, er
 	accounts := repository.NewAccountRepository(db)
 	nearKeys := stack.keys
 
+	mailer, err := newMailer(cfg, log, &a.closers)
+	if err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
+
 	nonceService := auth.NewNonceService(nonceStore, cfg.Auth.NonceTTL, cfg.Auth.Domain)
 	verifier := auth.NewWalletVerifier(cfg.Auth.Domain, nearKeys)
 	sessionService := auth.NewSessionService(sessionStore, cfg.Auth.SessionTTL, auth.WithLogger(log))
 	loginService := auth.NewLoginService(nonceStore, verifier, accounts, db, sessionService, auth.WithLogger(log))
-	accountService := auth.NewAccountService(nonceStore, verifier, accounts, db, auth.WithLogger(log))
+	otpService := auth.NewOTPService(repository.NewOTPStore(kv), repository.NewRateLimiter(kv), mailer,
+		auth.OTPConfig{RateLimit: cfg.Auth.OTPRateLimit, RateWindow: cfg.Auth.OTPRateWindow})
+	emailLoginService := auth.NewEmailLoginService(otpService, accounts, sessionService,
+		cfg.Auth.RecoverySessionTTL, auth.WithLogger(log))
+	accountService := auth.NewAccountService(nonceStore, verifier, accounts, db, otpService, mailer, auth.WithLogger(log))
 
 	router, err := deliveryhttp.NewRouter(
 		deliveryhttp.RouterConfig{
@@ -71,7 +83,7 @@ func NewAPI(ctx context.Context, cfg config.Config, log *slog.Logger) (_ App, er
 		log,
 		deliveryhttp.Handlers{
 			Health: handler.NewHealthHandler(log, readinessTimeout, db, kv),
-			Auth:   handler.NewAuthHandler(nonceService, loginService),
+			Auth:   handler.NewAuthHandler(nonceService, loginService, emailLoginService),
 			Me:     handler.NewMeHandler(accountService),
 			Escrow: handler.NewEscrowHandler(stack.escrows, auth.NewWalletProver(nonceStore, verifier),
 				cfg.NEAR.ExplorerTxURL),

@@ -32,6 +32,8 @@ const maxBodyBytes = 1 << 20
 const (
 	nonceRateLimit  = 20
 	verifyRateLimit = 20 // shared by /auth/verify and POST /me/wallets
+	// Email codes are also limited per address, in the cache (R-22).
+	emailCodeRateLimit = 10
 	// Escrow endpoints that verify signatures, call the NEAR RPC, send
 	// transactions paid by the relayer, or call 1Click.
 	escrowSignedRateLimit = 30
@@ -89,22 +91,29 @@ func NewRouter(cfg RouterConfig, log *slog.Logger, h Handlers) (*gin.Engine, err
 	r.GET("/healthz", h.Health.Live)
 	r.GET("/readyz", h.Health.Ready)
 
+	// requireSession takes wallet sessions only; anySession also takes the
+	// recovery sessions of an email code (R-22), on the routes they may use.
 	requireSession := middleware.RequireSession(h.Sessions)
+	anySession := middleware.RequireAnySession(h.Sessions)
 	verifyLimit := middleware.RateLimit(verifyRateLimit, time.Minute)
+	emailCodeLimit := middleware.RateLimit(emailCodeRateLimit, time.Minute)
 
 	v1 := r.Group(APIPrefix)
 	{
 		auth := v1.Group("/auth")
 		auth.POST("/nonce", middleware.RateLimit(nonceRateLimit, time.Minute), h.Auth.IssueNonce)
 		auth.POST("/verify", verifyLimit, h.Auth.Verify)
-		auth.POST("/logout", requireSession, h.Auth.Logout)
+		auth.POST("/logout", anySession, h.Auth.Logout)
+		auth.POST("/email/otp", emailCodeLimit, h.Auth.RequestEmailCode)
+		auth.POST("/email/verify", verifyLimit, h.Auth.VerifyEmailCode)
 
-		me := v1.Group("/me", requireSession)
-		me.GET("", h.Me.Get)
-		me.PATCH("", h.Me.Update)
-		me.POST("/wallets", verifyLimit, h.Me.LinkWallet)
-		me.DELETE("/wallets/:id", h.Me.UnlinkWallet)
-		me.GET("/escrows", h.Escrow.ListMine)
+		me := v1.Group("/me")
+		me.GET("", anySession, h.Me.Get)
+		me.PATCH("", requireSession, h.Me.Update)
+		me.POST("/email/verify", requireSession, verifyLimit, h.Me.VerifyEmail)
+		me.POST("/wallets", anySession, verifyLimit, h.Me.LinkWallet)
+		me.DELETE("/wallets/:id", anySession, h.Me.UnlinkWallet)
+		me.GET("/escrows", requireSession, h.Escrow.ListMine)
 
 		optionalAuth := middleware.OptionalAuth(h.Sessions, h.Guests)
 		signedLimit := middleware.RateLimit(escrowSignedRateLimit, time.Minute)

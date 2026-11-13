@@ -99,6 +99,13 @@ type Auth struct {
 	// GuestTokenTTL is the lifetime of the guest token the other party of an
 	// escrow receives (R-21).
 	GuestTokenTTL time.Duration `env:"AUTH_GUEST_TOKEN_TTL" envDefault:"24h"`
+	// RecoverySessionTTL is the lifetime of a session opened with an email
+	// code (R-22), at most AUTH_SESSION_TTL.
+	RecoverySessionTTL time.Duration `env:"AUTH_RECOVERY_SESSION_TTL" envDefault:"1h"`
+	// OTPRateLimit one-time codes may be sent to one email address in each
+	// OTPRateWindow (R-14, R-22).
+	OTPRateLimit  int           `env:"AUTH_OTP_RATE_LIMIT" envDefault:"5"`
+	OTPRateWindow time.Duration `env:"AUTH_OTP_RATE_WINDOW" envDefault:"1h"`
 }
 
 type NEAR struct {
@@ -286,6 +293,8 @@ func (c Config) validate() error {
 		val  time.Duration
 	}{
 		{"AUTH_GUEST_TOKEN_TTL", c.Auth.GuestTokenTTL},
+		{"AUTH_RECOVERY_SESSION_TTL", c.Auth.RecoverySessionTTL},
+		{"AUTH_OTP_RATE_WINDOW", c.Auth.OTPRateWindow},
 		{"ESCROW_TERMS_TTL", c.Escrow.TermsTTL},
 		{"ONECLICK_QUOTE_TTL", c.OneClick.QuoteTTL},
 		{"ONECLICK_REFRESH_AFTER", c.OneClick.RefreshAfter},
@@ -312,6 +321,9 @@ func (c Config) validate() error {
 	}
 	if c.Jobs.BatchSize < 1 {
 		errs = append(errs, errors.New("JOB_BATCH_SIZE must be >= 1"))
+	}
+	if c.Auth.OTPRateLimit < 1 {
+		errs = append(errs, errors.New("AUTH_OTP_RATE_LIMIT must be >= 1"))
 	}
 	if c.Mail.SMTPHost != "" {
 		if c.Mail.From == "" {

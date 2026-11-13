@@ -12,6 +12,39 @@ import (
 	"github.com/google/uuid"
 )
 
+const clearEmail = `-- name: ClearEmail :execrows
+UPDATE accounts
+SET email = NULL, email_verified_at = NULL, pending_email = NULL, updated_at = now()
+WHERE id = $1
+`
+
+func (q *Queries) ClearEmail(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, clearEmail, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const confirmEmail = `-- name: ConfirmEmail :execrows
+UPDATE accounts
+SET email = pending_email, email_verified_at = now(), pending_email = NULL, updated_at = now()
+WHERE id = $1 AND pending_email = $2
+`
+
+type ConfirmEmailParams struct {
+	ID           uuid.UUID
+	PendingEmail *string
+}
+
+func (q *Queries) ConfirmEmail(ctx context.Context, arg ConfirmEmailParams) (int64, error) {
+	result, err := q.db.Exec(ctx, confirmEmail, arg.ID, arg.PendingEmail)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countWallets = `-- name: CountWallets :one
 SELECT count(*)
 FROM wallets
@@ -44,22 +77,56 @@ func (q *Queries) DeleteWallet(ctx context.Context, arg DeleteWalletParams) (int
 }
 
 const getAccount = `-- name: GetAccount :one
-SELECT id, username, created_at
+SELECT id, username, email, pending_email, created_at
 FROM accounts
 WHERE id = $1
 `
 
 type GetAccountRow struct {
-	ID        uuid.UUID
-	Username  string
-	CreatedAt time.Time
+	ID           uuid.UUID
+	Username     string
+	Email        *string
+	PendingEmail *string
+	CreatedAt    time.Time
 }
 
 func (q *Queries) GetAccount(ctx context.Context, id uuid.UUID) (GetAccountRow, error) {
 	row := q.db.QueryRow(ctx, getAccount, id)
 	var i GetAccountRow
-	err := row.Scan(&i.ID, &i.Username, &i.CreatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PendingEmail,
+		&i.CreatedAt,
+	)
 	return i, err
+}
+
+const getAccountIDByEmail = `-- name: GetAccountIDByEmail :one
+SELECT id
+FROM accounts
+WHERE email = $1
+`
+
+func (q *Queries) GetAccountIDByEmail(ctx context.Context, email *string) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getAccountIDByEmail, email)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getAccountIDByUsername = `-- name: GetAccountIDByUsername :one
+SELECT id
+FROM accounts
+WHERE username = $1
+`
+
+func (q *Queries) GetAccountIDByUsername(ctx context.Context, username string) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getAccountIDByUsername, username)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getWalletOwner = `-- name: GetWalletOwner :one
@@ -179,6 +246,25 @@ func (q *Queries) LockAccount(ctx context.Context, id uuid.UUID) (uuid.UUID, err
 	var id_2 uuid.UUID
 	err := row.Scan(&id_2)
 	return id_2, err
+}
+
+const setPendingEmail = `-- name: SetPendingEmail :execrows
+UPDATE accounts
+SET pending_email = $2, updated_at = now()
+WHERE id = $1
+`
+
+type SetPendingEmailParams struct {
+	ID           uuid.UUID
+	PendingEmail *string
+}
+
+func (q *Queries) SetPendingEmail(ctx context.Context, arg SetPendingEmailParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setPendingEmail, arg.ID, arg.PendingEmail)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateUsername = `-- name: UpdateUsername :execrows

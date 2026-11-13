@@ -280,10 +280,11 @@ type memStore struct {
 	keys map[string]bool
 }
 
-func (m *memStore) Get(context.Context, string) ([]byte, error)              { return nil, nil }
-func (m *memStore) Set(context.Context, string, []byte, time.Duration) error { return nil }
-func (m *memStore) GetDel(context.Context, string) ([]byte, error)           { return nil, nil }
-func (m *memStore) Delete(context.Context, ...string) error                  { return nil }
+func (m *memStore) Get(context.Context, string) ([]byte, error)                { return nil, nil }
+func (m *memStore) Set(context.Context, string, []byte, time.Duration) error   { return nil }
+func (m *memStore) GetDel(context.Context, string) ([]byte, error)             { return nil, nil }
+func (m *memStore) Delete(context.Context, ...string) error                    { return nil }
+func (m *memStore) Incr(context.Context, string, time.Duration) (int64, error) { return 0, nil }
 func (m *memStore) SetNX(_ context.Context, key string, _ []byte, _ time.Duration) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -24,5 +24,8 @@ type Store interface {
 	SetNX(ctx context.Context, key string, value []byte, ttl time.Duration) (bool, error)
 	// GetDel returns the value and deletes the key atomically.
 	GetDel(ctx context.Context, key string) ([]byte, error)
+	// Incr adds 1 to the counter at key and returns the new count. A new
+	// counter expires after ttl; later increments do not extend it.
+	Incr(ctx context.Context, key string, ttl time.Duration) (int64, error)
 	Delete(ctx context.Context, keys ...string) error
 }

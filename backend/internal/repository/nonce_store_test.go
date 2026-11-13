@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -54,6 +55,19 @@ func (m *memoryCache) GetDel(ctx context.Context, key string) ([]byte, error) {
 	v, err := m.Get(ctx, key)
 	delete(m.values, key)
 	return v, err
+}
+
+func (m *memoryCache) Incr(_ context.Context, key string, ttl time.Duration) (int64, error) {
+	if m.err != nil {
+		return 0, m.err
+	}
+	n, _ := strconv.ParseInt(string(m.values[key]), 10, 64)
+	n++
+	if _, ok := m.values[key]; !ok {
+		m.ttls[key] = ttl
+	}
+	m.values[key] = []byte(strconv.FormatInt(n, 10))
+	return n, nil
 }
 
 func (m *memoryCache) Delete(_ context.Context, keys ...string) error {

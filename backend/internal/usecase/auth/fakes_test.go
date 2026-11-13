@@ -187,6 +187,130 @@ func (f *fakeAccounts) UnlinkWallet(_ context.Context, accountID, walletID strin
 	return false, nil
 }
 
+func (f *fakeAccounts) FindAccountByEmail(_ context.Context, email string) (string, error) {
+	for id, a := range f.accounts {
+		if email != "" && a.Email == email {
+			return id, nil
+		}
+	}
+	return "", auth.ErrAccountNotFound
+}
+
+func (f *fakeAccounts) SetPendingEmail(_ context.Context, id, email string) error {
+	a, ok := f.accounts[id]
+	if !ok {
+		return auth.ErrAccountNotFound
+	}
+	a.PendingEmail = email
+	f.accounts[id] = a
+	return nil
+}
+
+func (f *fakeAccounts) ConfirmEmail(_ context.Context, id, email string) (bool, error) {
+	a, ok := f.accounts[id]
+	if !ok || a.PendingEmail == "" || a.PendingEmail != email {
+		return false, nil
+	}
+	for otherID, other := range f.accounts {
+		if otherID != id && other.Email == email {
+			return false, auth.ErrEmailTaken
+		}
+	}
+	a.Email, a.PendingEmail = email, ""
+	f.accounts[id] = a
+	return true, nil
+}
+
+func (f *fakeAccounts) ClearEmail(_ context.Context, id string) error {
+	a, ok := f.accounts[id]
+	if !ok {
+		return auth.ErrAccountNotFound
+	}
+	a.Email, a.PendingEmail = "", ""
+	f.accounts[id] = a
+	return nil
+}
+
+// setEmail gives an account a verified email.
+func (f *fakeAccounts) setEmail(id, email string) {
+	a := f.accounts[id]
+	a.Email = email
+	f.accounts[id] = a
+}
+
+// otpMap is an in-memory auth.OTPStore; it does not expire codes, which the
+// service checks against their ExpiresAt.
+type otpMap map[string]*otpEntry
+
+type otpEntry struct {
+	rec      auth.OTPRecord
+	present  bool
+	attempts int
+}
+
+func otpMapKey(purpose, subject string) string { return purpose + "|" + subject }
+
+func (m otpMap) Save(_ context.Context, purpose, subject string, rec auth.OTPRecord, _ time.Duration) error {
+	m[otpMapKey(purpose, subject)] = &otpEntry{rec: rec, present: true}
+	return nil
+}
+
+func (m otpMap) Get(_ context.Context, purpose, subject string) (auth.OTPRecord, error) {
+	e := m[otpMapKey(purpose, subject)]
+	if e == nil || !e.present {
+		return auth.OTPRecord{}, auth.ErrOTPNotFound
+	}
+	return e.rec, nil
+}
+
+func (m otpMap) Consume(ctx context.Context, purpose, subject string) (auth.OTPRecord, error) {
+	rec, err := m.Get(ctx, purpose, subject)
+	if err == nil {
+		delete(m, otpMapKey(purpose, subject))
+	}
+	return rec, err
+}
+
+func (m otpMap) CountAttempt(_ context.Context, purpose, subject string, _ time.Duration) (int, error) {
+	k := otpMapKey(purpose, subject)
+	if m[k] == nil {
+		m[k] = &otpEntry{}
+	}
+	m[k].attempts++
+	return m[k].attempts, nil
+}
+
+func (m otpMap) Delete(_ context.Context, purpose, subject string) error {
+	if e := m[otpMapKey(purpose, subject)]; e != nil {
+		e.present, e.rec = false, auth.OTPRecord{}
+	}
+	return nil
+}
+
+// fakeLimiter counts events per key without windows.
+type fakeLimiter map[string]int
+
+func (f fakeLimiter) Allow(_ context.Context, key string, limit int, _ time.Duration) (bool, error) {
+	f[key]++
+	return f[key] <= limit, nil
+}
+
+type sentMail struct{ to, subject, body string }
+
+// fakeMailer records emails; it fails with err when set.
+type fakeMailer struct {
+	sent []sentMail
+	err  error
+}
+
+func (f *fakeMailer) Send(_ context.Context, to, subject, body string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.sent = append(f.sent, sentMail{to: to, subject: subject, body: body})
+	return nil
+}
+
 // fakeTx rolls fakeAccounts back when fn fails, like a real transaction.
 type fakeTx struct {
 	accounts *fakeAccounts

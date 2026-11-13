@@ -24,8 +24,8 @@ type guestKey struct{}
 
 // OptionalAuth authenticates the bearer session and the guest token of a
 // request when they are present, for endpoints open to anyone with the link.
-// A credential that is present but invalid or expired is rejected with 401;
-// requests with none pass through.
+// A credential that is present but invalid or expired is rejected with 401,
+// and a recovery session with 403; requests with none pass through.
 func OptionalAuth(sessions SessionAuthenticator, guests GuestAuthenticator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
@@ -40,6 +40,10 @@ func OptionalAuth(sessions SessionAuthenticator, guests GuestAuthenticator) gin.
 			if err != nil {
 				c.Header("WWW-Authenticate", `Bearer error="invalid_token"`)
 				response.Error(c, err)
+				return
+			}
+			if sess.Recovery {
+				response.Error(c, errWalletSessionRequired())
 				return
 			}
 			ctx = context.WithValue(ctx, sessionKey{}, sess)

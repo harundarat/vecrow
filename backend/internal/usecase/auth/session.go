@@ -33,13 +33,23 @@ func NewSessionService(store SessionStore, ttl time.Duration, opts ...Option) *S
 
 // Create starts a session for the account and returns its token.
 func (s *SessionService) Create(ctx context.Context, accountID string) (string, domain.Session, error) {
+	return s.create(ctx, accountID, s.ttl, false)
+}
+
+// CreateRecovery starts a recovery-only session (R-22) that lasts ttl, or the
+// session TTL if that is shorter.
+func (s *SessionService) CreateRecovery(ctx context.Context, accountID string, ttl time.Duration) (string, domain.Session, error) {
+	return s.create(ctx, accountID, min(ttl, s.ttl), true)
+}
+
+func (s *SessionService) create(ctx context.Context, accountID string, ttl time.Duration, recovery bool) (string, domain.Session, error) {
 	buf := make([]byte, sessionTokenSize)
 	if _, err := io.ReadFull(s.rt.random, buf); err != nil {
 		return "", domain.Session{}, fmt.Errorf("auth: generate session token: %w", err)
 	}
 	token := base64.RawURLEncoding.EncodeToString(buf)
-	sess := domain.Session{AccountID: accountID, ExpiresAt: s.rt.now().Add(s.ttl).UTC()}
-	if err := s.store.Save(ctx, sessionKey(token), sess, s.ttl); err != nil {
+	sess := domain.Session{AccountID: accountID, ExpiresAt: s.rt.now().Add(ttl).UTC(), Recovery: recovery}
+	if err := s.store.Save(ctx, sessionKey(token), sess, ttl); err != nil {
 		return "", domain.Session{}, fmt.Errorf("auth: save session: %w", err)
 	}
 	return token, sess, nil

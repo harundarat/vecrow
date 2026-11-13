@@ -164,7 +164,7 @@ func TestAccountService_ConcurrentUnlinkKeepsOneWallet(t *testing.T) {
 	ctx := context.Background()
 	db := openDB(t)
 	repo := repository.NewAccountRepository(db)
-	svc := auth.NewAccountService(nil, nil, repo, db)
+	svc := auth.NewAccountService(nil, nil, repo, db, nil, nil)
 
 	id := newAccount(t, db, repo, "it_u"+randomSuffix(t))
 	for range 2 {
@@ -213,5 +213,153 @@ func TestSessionStore_Redis(t *testing.T) {
 	time.Sleep(1500 * time.Millisecond)
 	if _, err := store.Get(ctx, key); !errors.Is(err, auth.ErrSessionNotFound) {
 		t.Fatalf("after TTL: error = %v, want ErrSessionNotFound", err)
+	}
+}
+
+func TestAccountRepository_Email(t *testing.T) {
+	db := openDB(t)
+	ctx := context.Background()
+	repo := repository.NewAccountRepository(db)
+	alice := newAccount(t, db, repo, "it_a_"+randomSuffix(t))
+	bob := newAccount(t, db, repo, "it_b_"+randomSuffix(t))
+	email := "it-" + randomSuffix(t) + "@example.com"
+
+	if _, err := repo.FindAccountByEmail(ctx, email); !errors.Is(err, auth.ErrAccountNotFound) {
+		t.Fatalf("FindAccountByEmail(unknown) error = %v", err)
+	}
+	if err := repo.SetPendingEmail(ctx, alice, email); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.GetAccount(ctx, alice)
+	if err != nil || got.Email != "" || got.PendingEmail != email {
+		t.Fatalf("after SetPendingEmail: %+v, %v", got, err)
+	}
+	// A pending email is not unique and matches nothing.
+	if err := repo.SetPendingEmail(ctx, bob, email); err != nil {
+		t.Fatalf("pending email of two accounts: %v", err)
+	}
+	if _, err := repo.FindAccountByEmail(ctx, email); !errors.Is(err, auth.ErrAccountNotFound) {
+		t.Fatalf("pending email matched: %v", err)
+	}
+	// Only the pending email can be confirmed.
+	if ok, err := repo.ConfirmEmail(ctx, alice, "other-"+email); err != nil || ok {
+		t.Fatalf("ConfirmEmail(another email) = %v, %v", ok, err)
+	}
+	if ok, err := repo.ConfirmEmail(ctx, alice, email); err != nil || !ok {
+		t.Fatalf("ConfirmEmail = %v, %v", ok, err)
+	}
+	got, _ = repo.GetAccount(ctx, alice)
+	if got.Email != email || got.PendingEmail != "" {
+		t.Fatalf("after ConfirmEmail: %+v", got)
+	}
+	if id, err := repo.FindAccountByEmail(ctx, email); err != nil || id != alice {
+		t.Fatalf("FindAccountByEmail = %q, %v", id, err)
+	}
+	// A verified email is unique.
+	if ok, err := repo.ConfirmEmail(ctx, bob, email); !errors.Is(err, auth.ErrEmailTaken) || ok {
+		t.Fatalf("ConfirmEmail(taken) = %v, %v", ok, err)
+	}
+	// Removing it frees it; bob's pending email can then be confirmed.
+	if err := repo.ClearEmail(ctx, alice); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := repo.ConfirmEmail(ctx, bob, email); err != nil || !ok {
+		t.Fatalf("ConfirmEmail after ClearEmail = %v, %v", ok, err)
+	}
+	if id, _ := repo.FindAccountByEmail(ctx, email); id != bob {
+		t.Fatalf("owner = %q, want bob", id)
+	}
+	// "" clears a pending email.
+	if err := repo.SetPendingEmail(ctx, bob, "new-"+email); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SetPendingEmail(ctx, bob, ""); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = repo.GetAccount(ctx, bob)
+	if got.Email != email || got.PendingEmail != "" {
+		t.Fatalf("after clearing the pending email: %+v", got)
+	}
+	// The table keeps emails in lower case.
+	if _, err := db.Querier(ctx).Exec(ctx, `UPDATE accounts SET pending_email = 'Upper@Example.com' WHERE id = $1`, bob); err == nil {
+		t.Fatal("an upper-case email was stored")
+	}
+	if err := repo.SetPendingEmail(ctx, "not-a-uuid", email); !errors.Is(err, auth.ErrAccountNotFound) {
+		t.Fatalf("SetPendingEmail(bad id) error = %v", err)
+	}
+}
+
+func TestOTPStore_Redis(t *testing.T) {
+	url := os.Getenv("CACHE_URL")
+	if url == "" {
+		t.Skip("CACHE_URL not set")
+	}
+	kv, err := cache.OpenRedis(context.Background(), cache.Config{URL: url, StartupTimeout: 5 * time.Second}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = kv.Close() })
+
+	ctx := context.Background()
+	store := repository.NewOTPStore(kv)
+	subject := "it-" + randomSuffix(t) + "@example.com"
+	rec := auth.OTPRecord{AccountID: "acct", Email: subject, Salt: []byte("s"), MAC: []byte("m"), ExpiresAt: time.Now().Add(time.Second)}
+	if err := store.Save(ctx, "login", subject, rec, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := store.CountAttempt(ctx, "login", subject, time.Second); err != nil || n != 1 {
+		t.Fatalf("CountAttempt = %d, %v", n, err)
+	}
+
+	// Two requests with the right code: exactly one consumes it.
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	consumed := 0
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := store.Consume(ctx, "login", subject); err == nil {
+				mu.Lock()
+				consumed++
+				mu.Unlock()
+			} else if !errors.Is(err, auth.ErrOTPNotFound) {
+				t.Errorf("Consume: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	if consumed != 1 {
+		t.Fatalf("consumed %d times, want 1", consumed)
+	}
+
+	// Codes and attempts expire.
+	if err := store.Save(ctx, "login", subject, rec, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CountAttempt(ctx, "login", subject, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(1500 * time.Millisecond)
+	if _, err := store.Get(ctx, "login", subject); !errors.Is(err, auth.ErrOTPNotFound) {
+		t.Fatalf("after TTL: error = %v", err)
+	}
+	if n, _ := store.CountAttempt(ctx, "login", subject, time.Second); n != 1 {
+		t.Fatalf("attempts after TTL = %d, want 1", n)
+	}
+
+	limiter := repository.NewRateLimiter(kv)
+	key := "otp:" + subject
+	for i := range 2 {
+		if ok, err := limiter.Allow(ctx, key, 2, time.Second); err != nil || !ok {
+			t.Fatalf("event %d = %v, %v", i+1, ok, err)
+		}
+	}
+	if ok, _ := limiter.Allow(ctx, key, 2, time.Second); ok {
+		t.Fatal("3rd event allowed")
+	}
+	time.Sleep(1500 * time.Millisecond)
+	if ok, _ := limiter.Allow(ctx, key, 2, time.Second); !ok {
+		t.Fatal("the window did not reset")
 	}
 }

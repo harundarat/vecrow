@@ -90,6 +90,28 @@ func (r *Redis) GetDel(ctx context.Context, key string) ([]byte, error) {
 	return b, nil
 }
 
+// incrScript increments a counter and sets its expiry when it has none, in
+// one step, so a crash between the two cannot leave a counter that never
+// expires.
+var incrScript = goredis.NewScript(`
+local n = redis.call('INCR', KEYS[1])
+if redis.call('PTTL', KEYS[1]) < 0 then
+	redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+return n
+`)
+
+func (r *Redis) Incr(ctx context.Context, key string, ttl time.Duration) (int64, error) {
+	if ttl <= 0 {
+		return 0, errors.New("cache: incr needs a ttl > 0")
+	}
+	n, err := incrScript.Run(ctx, r.client, []string{key}, ttl.Milliseconds()).Int64()
+	if err != nil {
+		return 0, fmt.Errorf("cache: incr: %w", err)
+	}
+	return n, nil
+}
+
 func (r *Redis) Delete(ctx context.Context, keys ...string) error {
 	if len(keys) == 0 {
 		return nil
