@@ -59,6 +59,7 @@ type fakeEscrows struct {
 	reason    string
 	wallet    domain.Wallet
 	filters   [2]string
+	invite    *escrow.InvitationInput
 }
 
 func (f *fakeEscrows) ContractID() string    { return "escrow.test.near" }
@@ -122,6 +123,11 @@ func (f *fakeEscrows) RequestRevision(_ context.Context, id string, n uint32, a 
 func (f *fakeEscrows) RefundUnsubmitted(_ context.Context, id string, delegate []byte) (escrow.ActionResult, error) {
 	f.method, f.id, f.delegate = "RefundUnsubmitted", id, delegate
 	return f.action, f.err
+}
+
+func (f *fakeEscrows) UpdateInvitation(_ context.Context, accountID, id string, in *escrow.InvitationInput) (domain.Escrow, error) {
+	f.method, f.accountID, f.id, f.invite = "UpdateInvitation", accountID, id, in
+	return f.escrow, f.err
 }
 
 func (f *fakeEscrows) ListMine(_ context.Context, accountID, role, status string) ([]escrow.AccountEscrow, error) {
@@ -493,5 +499,129 @@ func TestGuestTokenIsNotLogged(t *testing.T) {
 	srv.do(http.MethodGet, "/api/v1/escrows/"+testEscrowID, "", "X-Guest-Token", validGuestToken)
 	if strings.Contains(srv.logs.String(), validGuestToken) {
 		t.Errorf("guest token logged: %s", srv.logs)
+	}
+}
+
+func TestCreateEscrowWithInvitation(t *testing.T) {
+	srv := newTestServer(t, fakeIssuer{})
+	e := openEscrow()
+	e.Invitation = &domain.Invitation{Kind: domain.InviteByEmail, Email: "bob@example.com"}
+	srv.escrows.escrow = e
+	body := `{"role":"freelancer","milestones":["1"],"freelancer":"freelancer.near",
+		"split":[{"account_id":"freelancer.near","bps":10000}],
+		"invitation":{"wallet":{"scheme":"eip191","address":"0xabc"}}}`
+	rec := srv.do(http.MethodPost, "/api/v1/escrows", body, "Authorization", bearer)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body)
+	}
+	in := srv.escrows.create.Invitation
+	if in == nil || in.Wallet == nil || *in.Wallet != (escrow.WalletInput{Scheme: "eip191", Address: "0xabc"}) || in.Email != "" {
+		t.Fatalf("invitation input = %+v", in)
+	}
+	inv := decode(t, rec.Body.Bytes())["invitation"].(map[string]any)
+	if inv["kind"] != "email" || inv["email"] != "bob@example.com" || inv["wallet"] != nil || inv["username"] != nil {
+		t.Fatalf("invitation = %v", inv)
+	}
+}
+
+func TestUpdateInvitation(t *testing.T) {
+	srv := newTestServer(t, fakeIssuer{})
+	e := openEscrow()
+	e.Invitation = &domain.Invitation{Kind: domain.InviteByUsername, AccountID: "acct-2", Username: "bob"}
+	srv.escrows.escrow = e
+	path := "/api/v1/escrows/" + testEscrowID + "/invitation"
+
+	if rec := srv.do(http.MethodPatch, path, `{"invitation":{"username":"bob"}}`); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("without session: status %d", rec.Code)
+	}
+	if rec := srv.do(http.MethodPatch, path, `{"invitation":{"username":"bob"}}`, "Authorization", recoveryBearer); rec.Code != http.StatusForbidden {
+		t.Fatalf("recovery session: status %d", rec.Code)
+	}
+	if srv.escrows.method != "" {
+		t.Fatalf("the use case ran: %s", srv.escrows.method)
+	}
+
+	rec := srv.do(http.MethodPatch, path, `{"invitation":{"username":"bob"}}`, "Authorization", bearer)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body)
+	}
+	if srv.escrows.accountID != "acct-1" || srv.escrows.id != testEscrowID || srv.escrows.invite == nil || srv.escrows.invite.Username != "bob" {
+		t.Fatalf("call = %s %s %+v", srv.escrows.accountID, srv.escrows.id, srv.escrows.invite)
+	}
+	m := decode(t, rec.Body.Bytes())
+	if inv := m["invitation"].(map[string]any); inv["kind"] != "username" || inv["username"] != "bob" || inv["account_id"] != nil {
+		t.Fatalf("invitation = %v", inv)
+	}
+
+	srv.escrows.escrow.Invitation = nil
+	rec = srv.do(http.MethodPatch, path, `{"invitation":null}`, "Authorization", bearer)
+	if rec.Code != http.StatusOK || srv.escrows.invite != nil {
+		t.Fatalf("remove: status %d, input %+v", rec.Code, srv.escrows.invite)
+	}
+	if m := decode(t, rec.Body.Bytes()); m["invitation"] != nil {
+		t.Fatalf("invitation after removal = %v", m["invitation"])
+	}
+	for _, body := range []string{`{}`, `{"invitation":"bob"}`, `{"invitation":[1]}`} {
+		srv.escrows.method = ""
+		if rec := srv.do(http.MethodPatch, path, body, "Authorization", bearer); rec.Code != http.StatusBadRequest || srv.escrows.method != "" {
+			t.Errorf("%s: status %d, method %q", body, rec.Code, srv.escrows.method)
+		}
+	}
+	srv.escrows.err = domain.Conflict("escrow is Created")
+	if rec := srv.do(http.MethodPatch, path, `{"invitation":null}`, "Authorization", bearer); rec.Code != http.StatusConflict {
+		t.Errorf("conflict: status %d", rec.Code)
+	}
+}
+
+func TestGetEscrowShowsViewerInvitationAndWarnings(t *testing.T) {
+	srv := newTestServer(t, fakeIssuer{})
+	e := openEscrow()
+	e.Invitation = &domain.Invitation{Kind: domain.InviteByEmail, Email: "bob@example.com"}
+
+	// The invitation is in the escrow but not shown unless the view says so.
+	srv.escrows.view = escrow.View{Escrow: e}
+	m := decode(t, srv.do(http.MethodGet, "/api/v1/escrows/"+testEscrowID, "").Body.Bytes())
+	if m["invitation"] != nil || len(m["warnings"].([]any)) != 0 {
+		t.Fatalf("anonymous body: invitation %v, warnings %v", m["invitation"], m["warnings"])
+	}
+	if v := m["viewer"].(map[string]any); v["creator"] != false || v["invited"] != false {
+		t.Fatalf("viewer = %v", v)
+	}
+
+	srv.escrows.view = escrow.View{
+		Escrow: e, Creator: true, Invitation: e.Invitation,
+		Warnings: []escrow.Warning{{Code: escrow.WarningSubmitterNotInvited, Message: "check before you approve"}},
+	}
+	m = decode(t, srv.do(http.MethodGet, "/api/v1/escrows/"+testEscrowID, "", "Authorization", bearer).Body.Bytes())
+	if inv := m["invitation"].(map[string]any); inv["email"] != "bob@example.com" {
+		t.Fatalf("invitation = %v", inv)
+	}
+	w := m["warnings"].([]any)[0].(map[string]any)
+	if w["code"] != "submitter_not_invited" || w["message"] != "check before you approve" {
+		t.Fatalf("warnings = %v", m["warnings"])
+	}
+	if v := m["viewer"].(map[string]any); v["creator"] != true || v["invited"] != false {
+		t.Fatalf("viewer = %v", v)
+	}
+	// Other responses never carry the invitation.
+	srv.escrows.escrow = e
+	rec := srv.do(http.MethodPost, "/api/v1/escrows/"+testEscrowID+"/counterparty/reject", "", "Authorization", bearer)
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "bob@example.com") {
+		t.Fatalf("reject: status %d body %s", rec.Code, rec.Body)
+	}
+}
+
+func TestListMyEscrowsMarksInvitations(t *testing.T) {
+	srv := newTestServer(t, fakeIssuer{})
+	e := openEscrow()
+	e.Invitation = &domain.Invitation{Kind: domain.InviteByEmail, Email: "bob@example.com"}
+	srv.escrows.list = []escrow.AccountEscrow{{Escrow: e, Roles: []domain.Role{domain.RoleClient}, Invited: true}}
+	rec := srv.do(http.MethodGet, "/api/v1/me/escrows?role=client", "", "Authorization", bearer)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	item := decode(t, rec.Body.Bytes())["escrows"].([]any)[0].(map[string]any)
+	if item["invited"] != true || item["roles"].([]any)[0] != "client" || strings.Contains(rec.Body.String(), "bob@example.com") {
+		t.Fatalf("item = %v", item)
 	}
 }

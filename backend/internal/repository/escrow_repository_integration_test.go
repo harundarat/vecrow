@@ -312,3 +312,162 @@ func TestEscrowRepository_ExpiredSubmissions(t *testing.T) {
 		t.Fatalf("InsertSubmission after expiry: %v", err)
 	}
 }
+
+func TestEscrowRepository_Invitations(t *testing.T) {
+	ctx := context.Background()
+	f := newEscrowFixture(t)
+	creator := newAccount(t, f.db, f.accounts, "it_cr"+f.sfx)
+	bob := newAccount(t, f.db, f.accounts, "it_bob"+f.sfx)
+	carol := newAccount(t, f.db, f.accounts, "it_carol"+f.sfx)
+	alice := "alice-" + f.sfx + ".test.near"
+	if _, err := f.accounts.LinkWallet(ctx, creator, domain.Wallet{Scheme: domain.SchemeNEP413, Address: alice}); err != nil {
+		t.Fatal(err)
+	}
+	split := []domain.SplitShare{{AccountID: alice, BPS: 10_000}}
+	list := func(account string, filter escrow.ListFilter) []escrow.AccountEscrow {
+		t.Helper()
+		out, err := f.repo.ListForAccount(ctx, account, filter)
+		if err != nil {
+			t.Fatalf("ListForAccount: %v", err)
+		}
+		return out
+	}
+	invited := func(inv domain.Invitation) string {
+		t.Helper()
+		id, err := f.accounts.InvitedAccount(ctx, inv)
+		if err != nil {
+			t.Fatalf("InvitedAccount: %v", err)
+		}
+		return id
+	}
+
+	t.Run("by username", func(t *testing.T) {
+		e := f.newEscrow(t, creator, alice, split)
+		id, err := f.accounts.AccountByUsername(ctx, "it_bob"+f.sfx)
+		if err != nil || id != bob {
+			t.Fatalf("AccountByUsername = %q, %v", id, err)
+		}
+		if id, err := f.accounts.AccountByUsername(ctx, "it_nobody"+f.sfx); err != nil || id != "" {
+			t.Fatalf("AccountByUsername(unknown) = %q, %v", id, err)
+		}
+		if len(list(bob, escrow.ListFilter{})) != 0 {
+			t.Fatal("bob sees the escrow before the invitation")
+		}
+		if err := f.repo.SetInvitation(ctx, e.ID, &domain.Invitation{Kind: domain.InviteByUsername, AccountID: bob}); err != nil {
+			t.Fatal(err)
+		}
+		got, err := f.repo.Get(ctx, e.ID)
+		if err != nil || got.Invitation == nil || *got.Invitation != (domain.Invitation{Kind: domain.InviteByUsername, AccountID: bob, Username: "it_bob" + f.sfx}) {
+			t.Fatalf("Get invitation = %+v, %v", got.Invitation, err)
+		}
+		mine := list(bob, escrow.ListFilter{})
+		if len(mine) != 1 || mine[0].Escrow.ID != e.ID || !mine[0].Invited || !slices.Equal(mine[0].Roles, []domain.Role{domain.RoleClient}) {
+			t.Fatalf("bob's escrows = %+v", mine)
+		}
+		if len(list(bob, escrow.ListFilter{Role: domain.RoleFreelancer})) != 0 || len(list(bob, escrow.ListFilter{Role: domain.RoleClient, Status: domain.EscrowOpen})) != 1 {
+			t.Fatal("role or status filter ignores the invited role")
+		}
+		// The creator's own listing is unchanged.
+		if c := list(creator, escrow.ListFilter{}); len(c) == 0 || c[0].Invited {
+			t.Fatalf("creator's escrows = %+v", c)
+		}
+		// Removing the invitation removes the escrow from bob's account.
+		if err := f.repo.SetInvitation(ctx, e.ID, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := f.repo.Get(ctx, e.ID); got.Invitation != nil {
+			t.Fatalf("invitation after removal = %+v", got.Invitation)
+		}
+		if len(list(bob, escrow.ListFilter{})) != 0 {
+			t.Fatal("bob still sees the escrow")
+		}
+	})
+
+	t.Run("by email, matched once verified", func(t *testing.T) {
+		e := f.newEscrow(t, creator, alice, split)
+		email := "carol-" + f.sfx + "@example.com"
+		inv := domain.Invitation{Kind: domain.InviteByEmail, Email: email}
+		if err := f.repo.SetInvitation(ctx, e.ID, &inv); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.accounts.SetPendingEmail(ctx, carol, email); err != nil {
+			t.Fatal(err)
+		}
+		if len(list(carol, escrow.ListFilter{})) != 0 || invited(inv) != "" {
+			t.Fatal("an unverified email matched the invitation")
+		}
+		if ok, err := f.accounts.ConfirmEmail(ctx, carol, email); err != nil || !ok {
+			t.Fatalf("ConfirmEmail = %v, %v", ok, err)
+		}
+		if mine := list(carol, escrow.ListFilter{}); len(mine) != 1 || !mine[0].Invited || mine[0].Escrow.ID != e.ID {
+			t.Fatalf("carol's escrows = %+v", mine)
+		}
+		if invited(inv) != carol {
+			t.Fatal("InvitedAccount does not find the verified email")
+		}
+		if err := f.accounts.ClearEmail(ctx, carol); err != nil {
+			t.Fatal(err)
+		}
+		if len(list(carol, escrow.ListFilter{})) != 0 {
+			t.Fatal("a removed email still matches")
+		}
+	})
+
+	t.Run("by wallet, matched once linked", func(t *testing.T) {
+		e := f.newEscrow(t, creator, alice, split)
+		w := evmWallet(t)
+		inv := domain.Invitation{Kind: domain.InviteByWallet, Wallet: w}
+		if err := f.repo.SetInvitation(ctx, e.ID, &inv); err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := f.repo.Get(ctx, e.ID); got.Invitation == nil || *got.Invitation != inv {
+			t.Fatalf("Get invitation = %+v", got.Invitation)
+		}
+		if invited(inv) != "" {
+			t.Fatal("an unlinked wallet matched an account")
+		}
+		// A new account registers with the wallet.
+		dave := newAccount(t, f.db, f.accounts, "it_dave"+f.sfx)
+		if _, err := f.accounts.LinkWallet(ctx, dave, w); err != nil {
+			t.Fatal(err)
+		}
+		if mine := list(dave, escrow.ListFilter{Role: domain.RoleClient}); len(mine) != 1 || !mine[0].Invited {
+			t.Fatalf("dave's escrows = %+v", mine)
+		}
+		if invited(inv) != dave {
+			t.Fatal("InvitedAccount does not find the linked wallet")
+		}
+		// Replacing the invitation moves it.
+		if err := f.repo.SetInvitation(ctx, e.ID, &domain.Invitation{Kind: domain.InviteByUsername, AccountID: bob}); err != nil {
+			t.Fatal(err)
+		}
+		if len(list(dave, escrow.ListFilter{})) != 0 || len(list(bob, escrow.ListFilter{})) != 1 {
+			t.Fatal("the replaced invitation still reaches dave, or the new one misses bob")
+		}
+	})
+
+	t.Run("never the creator", func(t *testing.T) {
+		e := f.newEscrow(t, creator, alice, split)
+		w := evmWallet(t)
+		if err := f.repo.SetInvitation(ctx, e.ID, &domain.Invitation{Kind: domain.InviteByWallet, Wallet: w}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.accounts.LinkWallet(ctx, creator, w); err != nil {
+			t.Fatal(err)
+		}
+		for _, ae := range list(creator, escrow.ListFilter{}) {
+			if ae.Escrow.ID == e.ID && (ae.Invited || !slices.Equal(ae.Roles, []domain.Role{domain.RoleFreelancer})) {
+				t.Fatalf("creator listing = %+v", ae)
+			}
+		}
+	})
+
+	t.Run("the table rejects mixed invitations", func(t *testing.T) {
+		e := f.newEscrow(t, creator, alice, split)
+		_, err := f.db.Querier(ctx).Exec(ctx,
+			`INSERT INTO escrow_invitations (escrow_id, kind, account_id, email) VALUES ($1, 'username', $2, 'x@example.com')`, e.ID, bob)
+		if err == nil {
+			t.Fatal("an invitation with two values was stored")
+		}
+	})
+}

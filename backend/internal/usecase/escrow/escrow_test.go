@@ -39,6 +39,8 @@ type env struct {
 	storage  *fakeStorage
 	guests   *fakeGuests
 	keys     fakeKeys
+	wallets  fakeWallets
+	invitees fakeInvitees
 	now      time.Time
 }
 
@@ -52,12 +54,13 @@ func newEnv(t *testing.T) *env {
 		keys:     fakeKeys{full: map[string]bool{freelancer + "|" + walletsigtest.NEARPublicKey(freelancerKey): true}},
 		now:      start,
 	}
-	wallets := fakeWallets{owned: map[string][]domain.Wallet{
+	e.wallets = fakeWallets{owned: map[string][]domain.Wallet{
 		accF: {{Scheme: domain.SchemeNEP413, Address: freelancer}},
 		accC: {{Scheme: domain.SchemeEIP191, Address: clientEVM.Address()}},
 	}}
+	e.invitees = fakeInvitees{usernames: map[string]string{}, emails: map[string]string{}, wallets: e.wallets}
 	e.svc = escrow.NewService(escrow.Deps{
-		Repo: e.repo, Tx: fakeTx{}, Wallets: wallets, Keys: e.keys, Contract: e.contract,
+		Repo: e.repo, Tx: fakeTx{}, Wallets: e.wallets, Invitees: e.invitees, Keys: e.keys, Contract: e.contract,
 		Storage: e.storage, Guests: e.guests,
 	}, escrow.Config{
 		FeeBPS: 50, TermsTTL: time.Hour, AppURL: "https://app.example/", RelayerMaxGas: 100 * neartx.TGas,

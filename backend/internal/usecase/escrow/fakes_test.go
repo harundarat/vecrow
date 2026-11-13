@@ -24,6 +24,7 @@ type fakeRepo struct {
 	notes       map[string][]domain.RevisionNote
 	chainHeight map[string]uint64
 	syncedAt    map[string]time.Time
+	invitations map[string]domain.Invitation
 }
 
 func newFakeRepo() *fakeRepo {
@@ -31,6 +32,7 @@ func newFakeRepo() *fakeRepo {
 		escrows: map[string]domain.Escrow{}, submissions: map[string][]domain.Submission{},
 		parties: map[string][]domain.Party{}, txs: map[string][]domain.Transaction{},
 		notes: map[string][]domain.RevisionNote{}, chainHeight: map[string]uint64{}, syncedAt: map[string]time.Time{},
+		invitations: map[string]domain.Invitation{},
 	}
 }
 
@@ -61,7 +63,22 @@ func (r *fakeRepo) Get(_ context.Context, id string) (domain.Escrow, error) {
 			e.Submission = &s
 		}
 	}
+	e.Invitation = nil
+	if inv, ok := r.invitations[id]; ok {
+		e.Invitation = &inv
+	}
 	return e, nil
+}
+
+func (r *fakeRepo) SetInvitation(_ context.Context, id string, inv *domain.Invitation) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if inv == nil {
+		delete(r.invitations, id)
+	} else {
+		r.invitations[id] = *inv
+	}
+	return nil
 }
 
 func (r *fakeRepo) Lock(ctx context.Context, id string) (domain.Escrow, error) { return r.Get(ctx, id) }
@@ -231,6 +248,35 @@ type fakeWallets struct{ owned map[string][]domain.Wallet }
 
 func (f fakeWallets) IsWalletOwner(_ context.Context, account string, w domain.Wallet) (bool, error) {
 	return slices.Contains(f.owned[account], w), nil
+}
+
+// fakeInvitees resolves usernames and verified emails from maps, and wallets
+// from fakeWallets.
+type fakeInvitees struct {
+	usernames map[string]string // username -> account
+	emails    map[string]string // verified email -> account
+	wallets   fakeWallets
+}
+
+func (f fakeInvitees) AccountByUsername(_ context.Context, username string) (string, error) {
+	return f.usernames[username], nil
+}
+
+func (f fakeInvitees) InvitedAccount(_ context.Context, inv domain.Invitation) (string, error) {
+	switch inv.Kind {
+	case domain.InviteByUsername:
+		return inv.AccountID, nil
+	case domain.InviteByEmail:
+		return f.emails[inv.Email], nil
+	case domain.InviteByWallet:
+		for account, ws := range f.wallets.owned {
+			if slices.Contains(ws, inv.Wallet) {
+				return account, nil
+			}
+		}
+		return "", nil
+	}
+	return "", fmt.Errorf("unknown invitation kind %q", inv.Kind)
 }
 
 // fakeKeys reports full access for registered (account, key) pairs and a

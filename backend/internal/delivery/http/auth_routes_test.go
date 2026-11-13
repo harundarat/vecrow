@@ -361,6 +361,7 @@ func TestRecoverySession_IsLimited(t *testing.T) {
 		{http.MethodPost, "/api/v1/escrows"},
 		{http.MethodPost, "/api/v1/escrows/esc-1/counterparty/approve"},
 		{http.MethodPost, "/api/v1/escrows/esc-1/counterparty/reject"},
+		{http.MethodPatch, "/api/v1/escrows/esc-1/invitation"},
 		{http.MethodPatch, "/api/v1/me"},
 		{http.MethodPost, "/api/v1/me/email/verify"},
 		{http.MethodGet, "/api/v1/me/escrows"},

@@ -83,6 +83,7 @@ func newEscrowStack(cfg config.Config, db *database.Postgres, kv cache.Store, lo
 		Repo:     repository.NewEscrowRepository(db),
 		Tx:       db,
 		Wallets:  accounts,
+		Invitees: accounts,
 		Keys:     keys,
 		Contract: contract,
 		Storage:  storage,

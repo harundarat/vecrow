@@ -46,8 +46,11 @@ type Repository interface {
 	ListTransactions(ctx context.Context, escrowID string) ([]domain.Transaction, error)
 	AddRevisionNote(ctx context.Context, escrowID string, n domain.RevisionNote) error
 	ListRevisionNotes(ctx context.Context, escrowID string) ([]domain.RevisionNote, error)
-	// ListForAccount returns the escrows in which the account has a role,
-	// newest first.
+	// SetInvitation stores the escrow's invitation, replacing an earlier
+	// one; nil removes it. Get returns it in Escrow.Invitation.
+	SetInvitation(ctx context.Context, escrowID string, inv *domain.Invitation) error
+	// ListForAccount returns the escrows in which the account has a role
+	// (as creator, through a linked wallet, or by invitation), newest first.
 	ListForAccount(ctx context.Context, accountID string, f ListFilter) ([]AccountEscrow, error)
 
 	// Due work for the jobs (architecture.md §7.3).
@@ -70,6 +73,9 @@ type ListFilter struct {
 type AccountEscrow struct {
 	Escrow domain.Escrow
 	Roles  []domain.Role
+	// Invited reports that the account was invited to the escrow (R-15);
+	// the invited role is among Roles.
+	Invited bool
 }
 
 // MilestoneRef names a milestone of an escrow.
@@ -87,6 +93,17 @@ type PayoutRef struct {
 // WalletOwners tells whether a wallet is linked to an account.
 type WalletOwners interface {
 	IsWalletOwner(ctx context.Context, accountID string, w domain.Wallet) (bool, error)
+}
+
+// Invitees finds the accounts invitations name (R-15).
+type Invitees interface {
+	// AccountByUsername returns the ID of the account with username, or ""
+	// when there is none.
+	AccountByUsername(ctx context.Context, username string) (string, error)
+	// InvitedAccount returns the account inv names now: the account of an
+	// invitation by username, the account whose verified email it is, or
+	// the account its wallet is linked to; "" when there is none.
+	InvitedAccount(ctx context.Context, inv domain.Invitation) (string, error)
 }
 
 // AccessKeys looks up access keys on the NEAR chain.

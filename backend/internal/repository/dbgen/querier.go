@@ -14,6 +14,7 @@ type Querier interface {
 	ClearEmail(ctx context.Context, id uuid.UUID) (int64, error)
 	ConfirmEmail(ctx context.Context, arg ConfirmEmailParams) (int64, error)
 	CountWallets(ctx context.Context, accountID uuid.UUID) (int64, error)
+	DeleteInvitation(ctx context.Context, escrowID string) error
 	DeleteParties(ctx context.Context, escrowID string) error
 	DeletePendingPayouts(ctx context.Context, escrowID string) error
 	DeleteWallet(ctx context.Context, arg DeleteWalletParams) (int64, error)
@@ -23,6 +24,9 @@ type Querier interface {
 	GetActiveSubmission(ctx context.Context, escrowID string) (EscrowSubmission, error)
 	GetEscrow(ctx context.Context, id string) (Escrow, error)
 	GetFundingQuote(ctx context.Context, id uuid.UUID) (FundingQuote, error)
+	// Escrow invitations (spec.md R-15).
+	// The invitation of an escrow, with the current username of an invited account.
+	GetInvitation(ctx context.Context, escrowID string) (GetInvitationRow, error)
 	GetLatestFundingQuote(ctx context.Context, escrowID string) (FundingQuote, error)
 	GetWalletOwner(ctx context.Context, arg GetWalletOwnerParams) (uuid.UUID, error)
 	// Inserts skip conflicts instead of failing: a unique violation aborts the
@@ -45,8 +49,11 @@ type Querier interface {
 	// Returns no row for a transaction already stored.
 	InsertTransaction(ctx context.Context, arg InsertTransactionParams) (string, error)
 	InsertWallet(ctx context.Context, arg InsertWalletParams) (uuid.UUID, error)
-	// The escrows in which an account has a role: through a linked wallet
-	// named in the escrow, or as its creator. Filters are optional.
+	// The escrows in which the account has a role (R-16): as creator, through a
+	// linked wallet in escrow_parties, or by invitation (R-15). An invitation
+	// reaches the account by username, by its verified email, or by a linked
+	// wallet, and gives the role the creator did not take; it never reaches the
+	// creator. Filters are optional.
 	ListAccountEscrows(ctx context.Context, arg ListAccountEscrowsParams) ([]ListAccountEscrowsRow, error)
 	ListApprovedEscrows(ctx context.Context, limit int32) ([]string, error)
 	ListDuePayouts(ctx context.Context, limit int32) ([]ListDuePayoutsRow, error)
@@ -75,6 +82,7 @@ type Querier interface {
 	UpdateMilestonesChain(ctx context.Context, arg UpdateMilestonesChainParams) error
 	UpdateSubmission(ctx context.Context, arg UpdateSubmissionParams) (int64, error)
 	UpdateUsername(ctx context.Context, arg UpdateUsernameParams) (int64, error)
+	UpsertInvitation(ctx context.Context, arg UpsertInvitationParams) error
 }
 
 var _ Querier = (*Queries)(nil)

@@ -42,6 +42,7 @@ type Deps struct {
 	Repo     Repository
 	Tx       usecase.Transactor
 	Wallets  WalletOwners
+	Invitees Invitees
 	Keys     AccessKeys
 	Contract Contract
 	Storage  Storage
@@ -176,6 +177,8 @@ type CreateInput struct {
 	Role       string
 	Milestones []string
 	Details    DetailsInput
+	// Invitation optionally names the other party (R-15).
+	Invitation *InvitationInput
 }
 
 // Create stores a new escrow as Open (R-23). The creator's own address must
@@ -223,18 +226,38 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (domain.Escrow, er
 		}
 		return domain.Escrow{}, domain.Forbidden("approver %s is not a wallet of your account", wallet.Address)
 	}
+	var inv *domain.Invitation
+	if in.Invitation != nil {
+		i, err := s.parseInvitation(ctx, in.AccountID, *in.Invitation)
+		if err != nil {
+			return domain.Escrow{}, err
+		}
+		inv = &i
+	}
 
 	err = s.Tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := s.Repo.Create(ctx, e); err != nil {
 			return fmt.Errorf("escrow: create: %w", err)
 		}
-		return s.Repo.ReplaceParties(ctx, e.ID, e.Parties())
+		if err := s.Repo.ReplaceParties(ctx, e.ID, e.Parties()); err != nil {
+			return err
+		}
+		if inv == nil {
+			return nil
+		}
+		if err := s.Repo.SetInvitation(ctx, e.ID, inv); err != nil {
+			return fmt.Errorf("escrow: set invitation: %w", err)
+		}
+		return nil
 	})
 	if err != nil {
 		return domain.Escrow{}, err
 	}
-	s.rt.log.InfoContext(ctx, "escrow created",
-		slog.String("escrow_id", e.ID), slog.String("account_id", in.AccountID), slog.String("role", string(role)))
+	attrs := []any{slog.String("escrow_id", e.ID), slog.String("account_id", in.AccountID), slog.String("role", string(role))}
+	if inv != nil {
+		attrs = append(attrs, slog.String("invitation", string(inv.Kind)))
+	}
+	s.rt.log.InfoContext(ctx, "escrow created", attrs...)
 	return s.get(ctx, e.ID)
 }
 
@@ -243,6 +266,14 @@ type View struct {
 	Escrow        domain.Escrow
 	Transactions  []domain.Transaction
 	RevisionNotes []domain.RevisionNote
+	// Creator and Invited tell whether the requester's account created the
+	// escrow or is the account the invitation names (R-15).
+	Creator bool
+	Invited bool
+	// Invitation is set for the creator only.
+	Invitation *domain.Invitation
+	// Warnings are for this requester only.
+	Warnings []Warning
 }
 
 // Get returns an escrow for anyone with the link. A guest token, if given,
@@ -272,7 +303,13 @@ func (s *Service) Get(ctx context.Context, id string, req domain.Requester) (Vie
 	if err != nil {
 		return View{}, fmt.Errorf("escrow: list revision notes: %w", err)
 	}
-	return View{Escrow: e, Transactions: txs, RevisionNotes: notes}, nil
+	v := View{Escrow: e, Transactions: txs, RevisionNotes: notes}
+	if req.AccountID != "" {
+		if err := s.addViewer(ctx, &v, req.AccountID); err != nil {
+			return View{}, err
+		}
+	}
+	return v, nil
 }
 
 // Escrow returns the stored escrow, without refreshing it.

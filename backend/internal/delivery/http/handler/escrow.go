@@ -34,6 +34,7 @@ type EscrowUseCase interface {
 	RequestRevision(ctx context.Context, id string, milestone uint32, a escrow.ApproverAction, reason string) (escrow.ActionResult, error)
 	RefundUnsubmitted(ctx context.Context, id string, delegate []byte) (escrow.ActionResult, error)
 	ListMine(ctx context.Context, accountID, role, status string) ([]escrow.AccountEscrow, error)
+	UpdateInvitation(ctx context.Context, accountID, id string, in *escrow.InvitationInput) (domain.Escrow, error)
 }
 
 // WalletProver proves control of a wallet with a signed login nonce.
@@ -95,10 +96,36 @@ func (r detailsRequest) input() escrow.DetailsInput {
 	return in
 }
 
+// invitationRequest names the other party by exactly one of username,
+// email and wallet (R-15).
+type invitationRequest struct {
+	Username string      `json:"username"`
+	Email    string      `json:"email"`
+	Wallet   *walletJSON `json:"wallet"`
+}
+
+func (r *invitationRequest) input() *escrow.InvitationInput {
+	if r == nil {
+		return nil
+	}
+	in := &escrow.InvitationInput{Username: r.Username, Email: r.Email}
+	if r.Wallet != nil {
+		in.Wallet = &escrow.WalletInput{Scheme: r.Wallet.Scheme, Address: r.Wallet.Address}
+	}
+	return in
+}
+
 type createEscrowRequest struct {
 	Role       string   `json:"role" binding:"required"`
 	Milestones []string `json:"milestones" binding:"required"`
 	detailsRequest
+	Invitation *invitationRequest `json:"invitation"`
+}
+
+// updateInvitationRequest replaces the invitation; null removes it. The
+// field is required so an empty body never removes an invitation.
+type updateInvitationRequest struct {
+	Invitation json.RawMessage `json:"invitation"`
 }
 
 type submitRequest struct {
@@ -234,10 +261,52 @@ type escrowJSON struct {
 	UpdatedAt       time.Time           `json:"updated_at"`
 }
 
+// invitationJSON is the invitation as the creator sees it: its kind and
+// the one value it names.
+type invitationJSON struct {
+	Kind     string      `json:"kind"`
+	Username string      `json:"username,omitempty"`
+	Email    string      `json:"email,omitempty"`
+	Wallet   *walletJSON `json:"wallet,omitempty"`
+}
+
+func newInvitationJSON(inv *domain.Invitation) *invitationJSON {
+	if inv == nil {
+		return nil
+	}
+	out := &invitationJSON{Kind: string(inv.Kind), Username: inv.Username, Email: inv.Email}
+	if inv.Kind == domain.InviteByWallet {
+		out.Wallet = &walletJSON{Scheme: string(inv.Wallet.Scheme), Address: inv.Wallet.Address}
+	}
+	return out
+}
+
+// creatorEscrowJSON is an escrow with its invitation, for responses that
+// only its creator receives.
+type creatorEscrowJSON struct {
+	escrowJSON
+	Invitation *invitationJSON `json:"invitation"`
+}
+
+// viewerJSON tells the requester how their account relates to the escrow.
+type viewerJSON struct {
+	Creator bool `json:"creator"`
+	Invited bool `json:"invited"`
+}
+
+type warningJSON struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 type escrowDetailJSON struct {
 	escrowJSON
 	Transactions  []transactionJSON  `json:"transactions"`
 	RevisionNotes []revisionNoteJSON `json:"revision_notes"`
+	Viewer        viewerJSON         `json:"viewer"`
+	// Invitation is shown to the creator only.
+	Invitation *invitationJSON `json:"invitation"`
+	Warnings   []warningJSON   `json:"warnings"`
 }
 
 func (h *EscrowHandler) escrowJSON(e domain.Escrow) escrowJSON {
@@ -347,12 +416,41 @@ func (h *EscrowHandler) Create(c *gin.Context) {
 	}
 	e, err := h.escrows.Create(c.Request.Context(), escrow.CreateInput{
 		AccountID: id, Role: req.Role, Milestones: req.Milestones, Details: req.input(),
+		Invitation: req.Invitation.input(),
 	})
 	if err != nil {
 		response.Error(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, h.escrowJSON(e))
+	c.JSON(http.StatusCreated, creatorEscrowJSON{escrowJSON: h.escrowJSON(e), Invitation: newInvitationJSON(e.Invitation)})
+}
+
+// UpdateInvitation replaces or removes the invitation until the escrow is
+// on-chain; creator only (R-15).
+func (h *EscrowHandler) UpdateInvitation(c *gin.Context) {
+	id, ok := accountID(c)
+	if !ok {
+		return
+	}
+	var req updateInvitationRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	if len(req.Invitation) == 0 {
+		response.Error(c, domain.InvalidArgument("invitation is required; send null to remove it"))
+		return
+	}
+	var inv *invitationRequest
+	if err := json.Unmarshal(req.Invitation, &inv); err != nil {
+		response.Error(c, domain.InvalidArgument("invitation must be an object with username, email or wallet, or null"))
+		return
+	}
+	e, err := h.escrows.UpdateInvitation(c.Request.Context(), id, c.Param("id"), inv.input())
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, creatorEscrowJSON{escrowJSON: h.escrowJSON(e), Invitation: newInvitationJSON(e.Invitation)})
 }
 
 // Get shows an escrow to anyone with the link.
@@ -362,7 +460,14 @@ func (h *EscrowHandler) Get(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	out := escrowDetailJSON{escrowJSON: h.escrowJSON(view.Escrow), Transactions: []transactionJSON{}, RevisionNotes: []revisionNoteJSON{}}
+	out := escrowDetailJSON{
+		escrowJSON: h.escrowJSON(view.Escrow), Transactions: []transactionJSON{}, RevisionNotes: []revisionNoteJSON{},
+		Viewer:     viewerJSON{Creator: view.Creator, Invited: view.Invited},
+		Invitation: newInvitationJSON(view.Invitation), Warnings: []warningJSON{},
+	}
+	for _, w := range view.Warnings {
+		out.Warnings = append(out.Warnings, warningJSON{Code: w.Code, Message: w.Message})
+	}
 	for _, tx := range view.Transactions {
 		out.Transactions = append(out.Transactions, h.transactionJSON(tx))
 	}
@@ -587,6 +692,9 @@ func (h *EscrowHandler) Refund(c *gin.Context) {
 type myEscrowJSON struct {
 	escrowJSON
 	Roles []string `json:"roles"`
+	// Invited is true when the account was invited to the escrow (R-15);
+	// the invited role is among Roles.
+	Invited bool `json:"invited"`
 }
 
 type myEscrowsResponse struct {
@@ -610,7 +718,7 @@ func (h *EscrowHandler) ListMine(c *gin.Context) {
 		for i, r := range ae.Roles {
 			roles[i] = string(r)
 		}
-		out.Escrows = append(out.Escrows, myEscrowJSON{escrowJSON: h.escrowJSON(ae.Escrow), Roles: roles})
+		out.Escrows = append(out.Escrows, myEscrowJSON{escrowJSON: h.escrowJSON(ae.Escrow), Roles: roles, Invited: ae.Invited})
 	}
 	c.JSON(http.StatusOK, out)
 }

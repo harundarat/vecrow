@@ -316,17 +316,37 @@ func (q *Queries) InsertTransaction(ctx context.Context, arg InsertTransactionPa
 }
 
 const listAccountEscrows = `-- name: ListAccountEscrows :many
-WITH roles AS (
-    SELECT p.escrow_id, p.role
+WITH invited AS (
+    SELECT i.escrow_id
+    FROM escrow_invitations i
+    WHERE i.account_id = $4::uuid
+    UNION
+    SELECT i.escrow_id
+    FROM escrow_invitations i
+    JOIN accounts a ON a.email = i.email
+    WHERE a.id = $4::uuid
+    UNION
+    SELECT i.escrow_id
+    FROM escrow_invitations i
+    JOIN wallets w ON w.scheme = i.wallet_scheme AND w.address = i.wallet_address
+    WHERE w.account_id = $4::uuid
+),
+roles AS (
+    SELECT p.escrow_id, p.role, false AS invited
     FROM escrow_parties p
     JOIN wallets w ON w.scheme = p.scheme AND w.address = p.address
-    WHERE w.account_id = $4
+    WHERE w.account_id = $4::uuid
     UNION
-    SELECT e.id, e.creator_role
+    SELECT e.id, e.creator_role, false
     FROM escrows e
-    WHERE e.creator_account_id = $4
+    WHERE e.creator_account_id = $4::uuid
+    UNION
+    SELECT e.id, CASE e.creator_role WHEN 'freelancer' THEN 'client' ELSE 'freelancer' END, true
+    FROM invited v
+    JOIN escrows e ON e.id = v.escrow_id
+    WHERE e.creator_account_id <> $4::uuid
 )
-SELECT e.id, array_agg(DISTINCT r.role ORDER BY r.role)::text[] AS roles
+SELECT e.id, array_agg(DISTINCT r.role ORDER BY r.role)::text[] AS roles, bool_or(r.invited)::boolean AS invited
 FROM escrows e
 JOIN roles r ON r.escrow_id = e.id
 WHERE $1::text IS NULL OR e.status = $1::text
@@ -344,12 +364,16 @@ type ListAccountEscrowsParams struct {
 }
 
 type ListAccountEscrowsRow struct {
-	ID    string
-	Roles []string
+	ID      string
+	Roles   []string
+	Invited bool
 }
 
-// The escrows in which an account has a role: through a linked wallet
-// named in the escrow, or as its creator. Filters are optional.
+// The escrows in which the account has a role (R-16): as creator, through a
+// linked wallet in escrow_parties, or by invitation (R-15). An invitation
+// reaches the account by username, by its verified email, or by a linked
+// wallet, and gives the role the creator did not take; it never reaches the
+// creator. Filters are optional.
 func (q *Queries) ListAccountEscrows(ctx context.Context, arg ListAccountEscrowsParams) ([]ListAccountEscrowsRow, error) {
 	rows, err := q.db.Query(ctx, listAccountEscrows,
 		arg.Status,
@@ -364,7 +388,7 @@ func (q *Queries) ListAccountEscrows(ctx context.Context, arg ListAccountEscrows
 	items := []ListAccountEscrowsRow{}
 	for rows.Next() {
 		var i ListAccountEscrowsRow
-		if err := rows.Scan(&i.ID, &i.Roles); err != nil {
+		if err := rows.Scan(&i.ID, &i.Roles, &i.Invited); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

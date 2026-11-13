@@ -85,6 +85,48 @@ func (r *AccountRepository) FindWalletOwner(ctx context.Context, w domain.Wallet
 	return owner.String(), nil
 }
 
+// AccountByUsername returns the ID of the account with username, or "" when
+// there is none (R-15).
+func (r *AccountRepository) AccountByUsername(ctx context.Context, username string) (string, error) {
+	id, err := r.q(ctx).GetAccountIDByUsername(ctx, username)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("account repository: get account by username: %w", err)
+	}
+	return id.String(), nil
+}
+
+// InvitedAccount returns the account an invitation names now: the account
+// of an invitation by username, the account whose verified email it is, or
+// the account its wallet is linked to; "" when there is none (R-15). A
+// pending, unverified email never matches.
+func (r *AccountRepository) InvitedAccount(ctx context.Context, inv domain.Invitation) (string, error) {
+	var id string
+	var err error
+	switch inv.Kind {
+	case domain.InviteByUsername:
+		return inv.AccountID, nil
+	case domain.InviteByEmail:
+		id, err = r.FindAccountByEmail(ctx, inv.Email)
+		if errors.Is(err, auth.ErrAccountNotFound) {
+			return "", nil
+		}
+	case domain.InviteByWallet:
+		id, err = r.FindWalletOwner(ctx, inv.Wallet)
+		if errors.Is(err, auth.ErrWalletNotFound) {
+			return "", nil
+		}
+	default:
+		return "", fmt.Errorf("account repository: unknown invitation kind %q", inv.Kind)
+	}
+	if err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
 func (r *AccountRepository) CreateAccount(ctx context.Context, username string) (string, error) {
 	id, err := uuid.NewV7()
 	if err != nil {

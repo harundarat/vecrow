@@ -51,6 +51,17 @@ type EscrowEvent struct {
 	CreatedAt time.Time
 }
 
+type EscrowInvitation struct {
+	EscrowID      string
+	Kind          string
+	AccountID     *uuid.UUID
+	Email         *string
+	WalletScheme  *string
+	WalletAddress *string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
 type EscrowMilestone struct {
 	EscrowID      string
 	Milestone     int32

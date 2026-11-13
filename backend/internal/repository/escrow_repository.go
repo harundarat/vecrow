@@ -168,7 +168,52 @@ func (r *EscrowRepository) load(ctx context.Context, row dbgen.Escrow) (domain.E
 	for _, p := range payouts {
 		e.PendingPayouts = append(e.PendingPayouts, domain.PendingPayout{AccountID: p.AccountID, Amount: p.Amount})
 	}
+
+	inv, err := q.GetInvitation(ctx, row.ID)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+	case err != nil:
+		return domain.Escrow{}, fmt.Errorf("escrow repository: get invitation: %w", err)
+	default:
+		i := domain.Invitation{
+			Kind: domain.InvitationKind(inv.Kind), Username: deref(inv.Username), Email: deref(inv.Email),
+		}
+		if inv.AccountID != nil {
+			i.AccountID = inv.AccountID.String()
+		}
+		if inv.WalletScheme != nil {
+			i.Wallet = domain.Wallet{Scheme: domain.WalletScheme(*inv.WalletScheme), Address: deref(inv.WalletAddress)}
+		}
+		e.Invitation = &i
+	}
 	return e, nil
+}
+
+// SetInvitation stores the escrow's invitation, replacing an earlier one;
+// nil removes it.
+func (r *EscrowRepository) SetInvitation(ctx context.Context, escrowID string, inv *domain.Invitation) error {
+	q := r.q(ctx)
+	if inv == nil {
+		if err := q.DeleteInvitation(ctx, escrowID); err != nil {
+			return fmt.Errorf("escrow repository: delete invitation: %w", err)
+		}
+		return nil
+	}
+	params := dbgen.UpsertInvitationParams{EscrowID: escrowID, Kind: string(inv.Kind), Email: nullable(inv.Email)}
+	if inv.AccountID != "" {
+		id, err := uuid.Parse(inv.AccountID)
+		if err != nil {
+			return fmt.Errorf("escrow repository: invited account %q: %w", inv.AccountID, err)
+		}
+		params.AccountID = &id
+	}
+	if inv.Wallet != (domain.Wallet{}) {
+		params.WalletScheme, params.WalletAddress = nullable(string(inv.Wallet.Scheme)), nullable(inv.Wallet.Address)
+	}
+	if err := q.UpsertInvitation(ctx, params); err != nil {
+		return fmt.Errorf("escrow repository: save invitation: %w", err)
+	}
+	return nil
 }
 
 func toSubmission(row dbgen.EscrowSubmission) (domain.Submission, error) {
@@ -466,7 +511,7 @@ func (r *EscrowRepository) ListForAccount(ctx context.Context, accountID string,
 		for i, role := range row.Roles {
 			roles[i] = domain.Role(role)
 		}
-		out = append(out, escrow.AccountEscrow{Escrow: e, Roles: roles})
+		out = append(out, escrow.AccountEscrow{Escrow: e, Roles: roles, Invited: row.Invited})
 	}
 	return out, nil
 }

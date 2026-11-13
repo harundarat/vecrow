@@ -85,6 +85,9 @@ type Escrow struct {
 	Client     *ClientDetails
 	// Submission is the active submission (pending, approved or created).
 	Submission *Submission
+	// Invitation names the other party (R-15); nil when there is none. It is
+	// shown to the creator only.
+	Invitation *Invitation
 
 	// Snapshot of get_escrow, set once the escrow is on-chain.
 	ReviewWindowSec  *uint64

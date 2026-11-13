@@ -132,20 +132,43 @@ FROM revision_notes
 WHERE escrow_id = $1
 ORDER BY created_at, id;
 
--- The escrows in which an account has a role: through a linked wallet
--- named in the escrow, or as its creator. Filters are optional.
+-- The escrows in which the account has a role (R-16): as creator, through a
+-- linked wallet in escrow_parties, or by invitation (R-15). An invitation
+-- reaches the account by username, by its verified email, or by a linked
+-- wallet, and gives the role the creator did not take; it never reaches the
+-- creator. Filters are optional.
 -- name: ListAccountEscrows :many
-WITH roles AS (
-    SELECT p.escrow_id, p.role
+WITH invited AS (
+    SELECT i.escrow_id
+    FROM escrow_invitations i
+    WHERE i.account_id = sqlc.arg(account_id)::uuid
+    UNION
+    SELECT i.escrow_id
+    FROM escrow_invitations i
+    JOIN accounts a ON a.email = i.email
+    WHERE a.id = sqlc.arg(account_id)::uuid
+    UNION
+    SELECT i.escrow_id
+    FROM escrow_invitations i
+    JOIN wallets w ON w.scheme = i.wallet_scheme AND w.address = i.wallet_address
+    WHERE w.account_id = sqlc.arg(account_id)::uuid
+),
+roles AS (
+    SELECT p.escrow_id, p.role, false AS invited
     FROM escrow_parties p
     JOIN wallets w ON w.scheme = p.scheme AND w.address = p.address
-    WHERE w.account_id = sqlc.arg(account_id)
+    WHERE w.account_id = sqlc.arg(account_id)::uuid
     UNION
-    SELECT e.id, e.creator_role
+    SELECT e.id, e.creator_role, false
     FROM escrows e
-    WHERE e.creator_account_id = sqlc.arg(account_id)
+    WHERE e.creator_account_id = sqlc.arg(account_id)::uuid
+    UNION
+    SELECT e.id, CASE e.creator_role WHEN 'freelancer' THEN 'client' ELSE 'freelancer' END, true
+    FROM invited v
+    JOIN escrows e ON e.id = v.escrow_id
+    WHERE e.creator_account_id <> sqlc.arg(account_id)::uuid
 )
-SELECT e.id, array_agg(DISTINCT r.role ORDER BY r.role)::text[] AS roles
+SELECT e.id, array_agg(DISTINCT r.role ORDER BY r.role)::text[] AS roles, bool_or(r.invited)::boolean AS invited
 FROM escrows e
 JOIN roles r ON r.escrow_id = e.id
 WHERE sqlc.narg(status)::text IS NULL OR e.status = sqlc.narg(status)::text
