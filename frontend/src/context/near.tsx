@@ -18,9 +18,10 @@ import { env } from "@/env"
 
 type NearContextValue = {
   accountId: string
-  /** Opens the wallet selector and resolves with the connected account ID. */
+  /** Resolves with the connected account ID, opening the wallet selector if none is connected. */
   connect: () => Promise<string>
   disconnect: () => Promise<void>
+  /** Signs with the connected account and rejects a signature from another one. */
   signMessage: (
     params: Omit<SignMessageParams, "network" | "signerId">
   ) => Promise<SignedMessage>
@@ -64,10 +65,13 @@ export function NearProvider({ children }: React.PropsWithChildren) {
   }, [connector])
 
   const connect = useCallback(async () => {
-    const wallet = await connector.connect()
-    const accounts = await wallet.getAccounts()
-    const id = accounts[0]?.accountId ?? ""
-    setAccountId(id)
+    const connected = await connector.getConnectedWallet().catch(() => null)
+    let id = connected?.accounts[0]?.accountId
+    if (!id) {
+      const wallet = await connector.connect()
+      id = (await wallet.getAccounts())[0]?.accountId
+    }
+    setAccountId(id ?? "")
     if (!id) throw new Error("The NEAR wallet returned no account.")
     return id
   }, [connector])
@@ -80,11 +84,18 @@ export function NearProvider({ children }: React.PropsWithChildren) {
   const signMessage = useCallback<NearContextValue["signMessage"]>(
     async (params) => {
       const { wallet, accounts } = await connector.getConnectedWallet()
-      return wallet.signMessage({
+      const signerId = accounts[0]?.accountId
+      const signed = await wallet.signMessage({
         ...params,
         network: connector.network,
-        signerId: accounts[0]?.accountId,
+        signerId,
       })
+      if (signerId && signed.accountId && signed.accountId !== signerId) {
+        throw new Error(
+          `The wallet signed as ${signed.accountId}, not ${signerId}.`
+        )
+      }
+      return signed
     },
     [connector]
   )

@@ -7,7 +7,7 @@ import { BrowserProvider } from "ethers"
 import { useMemo } from "react"
 import { appKit } from "@/context/appkit"
 import { useNearWallet } from "@/context/near"
-import type { WalletScheme } from "@/lib/api/auth"
+import type { SignRequest, WalletScheme, WalletSignature } from "@/lib/api/auth"
 import { WalletCancelledError } from "@/lib/wallet-errors"
 import {
   nep413Nonce,
@@ -30,14 +30,6 @@ const NAMESPACE: Record<Exclude<WalletChain, "near">, AppKitNamespace> = {
   evm: "eip155",
   solana: "solana",
 }
-
-/**
- * `nonce` is hex and `recipient` a plain string; only NEP-413 uses them, but
- * every backend challenge carries both.
- */
-export type SignRequest = { message: string; nonce: string; recipient: string }
-
-export type WalletSignature = { signature: string; public_key?: string }
 
 export type WalletSigner = {
   scheme: WalletScheme
@@ -70,21 +62,16 @@ export function useWalletSigner(chain: WalletChain): WalletSigner {
       return {
         scheme: WALLET_SCHEME.near,
         address,
-        connect: async () => address ?? connectNear(),
+        connect: connectNear,
         disconnect: disconnectNear,
-        sign: async ({ message, nonce, recipient }) => {
-          const signed = await signNearMessage({
-            message,
-            recipient,
-            nonce: nep413Nonce(nonce),
-          })
-          if (address && signed.accountId && signed.accountId !== address) {
-            throw new Error(
-              `The wallet signed as ${signed.accountId}, not ${address}.`
-            )
-          }
-          return toNep413Proof(signed)
-        },
+        sign: async ({ message, nonce, recipient }) =>
+          toNep413Proof(
+            await signNearMessage({
+              message,
+              recipient,
+              nonce: nep413Nonce(nonce),
+            })
+          ),
       }
     }
 

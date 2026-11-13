@@ -20,6 +20,12 @@ export type RequestOptions = {
   signal?: AbortSignal
 }
 
+/** Calls the API as the signed-in account; see `useAuth().request`. */
+export type Requester = <T>(
+  path: string,
+  options?: Omit<RequestOptions, "token">
+) => Promise<T>
+
 export async function apiFetch<T>(
   path: string,
   { method = "GET", body, token, guestToken, signal }: RequestOptions = {}

@@ -28,7 +28,8 @@
 
 - Types mirror the backend JSON exactly, in snake_case (`expires_at`, `new_account`). Do not rename fields.
 - USDC amounts are always strings, end to end. Never parse them into a JS number or float.
-- Call the backend through `src/lib/api`. Authenticated calls go through `useAuth().request`, which clears the session on a 401.
+- Call the backend through `src/lib/api`. Authenticated calls go through `useAuth().request`, which re-checks the session on a 401 (a wrong one-time code is also a 401) and signs out if it has ended.
+- A session opened with an email code has `useAuth().recovery`: it may only view the account and link or unlink wallets. Hide or disable every other action.
 - Signed messages always come from the backend and are signed exactly as returned. Never rebuild them in the frontend.
 
 ## Code
