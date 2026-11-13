@@ -24,11 +24,8 @@ import {
 } from "@/lib/api/account"
 import type { Account } from "@/lib/api/auth"
 import { describeApiError } from "@/lib/api/errors"
-import {
-  FeedbackMessage,
-  SettingsSection,
-  type Feedback,
-} from "./settings-section"
+import { FeedbackMessage, type Feedback } from "@/components/feedback-message"
+import { SettingsSection } from "./settings-section"
 
 type Action = "send" | "verify" | "resend" | "cancel" | "remove"
 

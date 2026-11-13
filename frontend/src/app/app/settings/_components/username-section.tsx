@@ -9,11 +9,8 @@ import { useAuth } from "@/context/auth"
 import { updateAccount } from "@/lib/api/account"
 import type { Account } from "@/lib/api/auth"
 import { describeApiError } from "@/lib/api/errors"
-import {
-  FeedbackMessage,
-  SettingsSection,
-  type Feedback,
-} from "./settings-section"
+import { FeedbackMessage, type Feedback } from "@/components/feedback-message"
+import { SettingsSection } from "./settings-section"
 
 export function UsernameSection({ account }: { account: Account }) {
   const { recovery, request, setAccount } = useAuth()

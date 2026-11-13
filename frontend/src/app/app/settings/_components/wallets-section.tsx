@@ -29,11 +29,8 @@ import {
 import { describeApiError } from "@/lib/api/errors"
 import { formatDate, shortenAddress, WALLET_SCHEME_LABEL } from "@/lib/format"
 import { describeWalletError } from "@/lib/wallet-errors"
-import {
-  FeedbackMessage,
-  SettingsSection,
-  type Feedback,
-} from "./settings-section"
+import { FeedbackMessage, type Feedback } from "@/components/feedback-message"
+import { SettingsSection } from "./settings-section"
 
 const CHAINS: Array<{ chain: WalletChain; label: string; icon: string }> = [
   { chain: "near", label: "NEAR", icon: "/crypto-icons/near-protocol.png" },
