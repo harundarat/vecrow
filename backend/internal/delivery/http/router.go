@@ -133,6 +133,7 @@ func NewRouter(cfg RouterConfig, log *slog.Logger, h Handlers) (*gin.Engine, err
 		escrows.POST("/:id/guest-token", verifyLimit, h.Escrow.GuestToken)
 		escrows.POST("/:id/quote", signedLimit, optionalAuth, h.Funding.Quote)
 		escrows.GET("/:id/funding", readLimit, optionalAuth, h.Funding.Status)
+		escrows.GET("/:id/export.csv", readLimit, optionalAuth, h.Escrow.ExportCSV)
 		escrows.POST("/:id/milestones/:n/submit", signedLimit, h.Escrow.SubmitMilestone)
 		escrows.POST("/:id/milestones/:n/approve", signedLimit, h.Escrow.ApproveMilestone)
 		escrows.POST("/:id/milestones/:n/revision", signedLimit, h.Escrow.RequestRevision)

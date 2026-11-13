@@ -60,6 +60,7 @@ type fakeEscrows struct {
 	wallet    domain.Wallet
 	filters   [2]string
 	invite    *escrow.InvitationInput
+	payouts   []escrow.Payout
 }
 
 func (f *fakeEscrows) ContractID() string    { return "escrow.test.near" }
@@ -128,6 +129,11 @@ func (f *fakeEscrows) RefundUnsubmitted(_ context.Context, id string, delegate [
 func (f *fakeEscrows) UpdateInvitation(_ context.Context, accountID, id string, in *escrow.InvitationInput) (domain.Escrow, error) {
 	f.method, f.accountID, f.id, f.invite = "UpdateInvitation", accountID, id, in
 	return f.escrow, f.err
+}
+
+func (f *fakeEscrows) Payouts(_ context.Context, id string, req domain.Requester) ([]escrow.Payout, error) {
+	f.method, f.id, f.requester = "Payouts", id, req
+	return f.payouts, f.err
 }
 
 func (f *fakeEscrows) ListMine(_ context.Context, accountID, role, status string) ([]escrow.AccountEscrow, error) {

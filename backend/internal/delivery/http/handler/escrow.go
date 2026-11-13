@@ -35,6 +35,7 @@ type EscrowUseCase interface {
 	RefundUnsubmitted(ctx context.Context, id string, delegate []byte) (escrow.ActionResult, error)
 	ListMine(ctx context.Context, accountID, role, status string) ([]escrow.AccountEscrow, error)
 	UpdateInvitation(ctx context.Context, accountID, id string, in *escrow.InvitationInput) (domain.Escrow, error)
+	Payouts(ctx context.Context, id string, req domain.Requester) ([]escrow.Payout, error)
 }
 
 // WalletProver proves control of a wallet with a signed login nonce.
