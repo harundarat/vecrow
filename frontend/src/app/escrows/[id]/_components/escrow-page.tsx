@@ -6,13 +6,17 @@ import { VecrowLogoWordmark } from "@/assets/vecrow-logo-wordmark"
 import { FeedbackMessage } from "@/components/feedback-message"
 import { useAuth } from "@/context/auth"
 import { useEscrowDetail } from "@/hooks/use-escrow-detail"
+import type { useGuestAccess } from "@/hooks/use-guest-access"
 import type { EscrowDetail } from "@/lib/api/escrow"
+import { sameWallet } from "@/lib/guest-access"
 import {
   EscrowHeader,
   EscrowWarnings,
   MilestonesCard,
   PartiesCard,
 } from "./escrow-details"
+import { JoinSection } from "./join-section"
+import { JoinedSection } from "./joined-section"
 import { LinkSection } from "./link-section"
 import { OnChainDone, OnChainProgress } from "./on-chain-section"
 
@@ -43,7 +47,11 @@ export function EscrowPage({ id }: { id: string }) {
       )}
 
       {detail.escrow ? (
-        <EscrowView escrow={detail.escrow} reopened={detail.reopened} />
+        <EscrowView
+          escrow={detail.escrow}
+          reopened={detail.reopened}
+          guest={detail.guest}
+        />
       ) : detail.error ? (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed px-4 py-12 text-center">
           <CircleAlert aria-hidden className="size-6 text-destructive" />
@@ -67,13 +75,21 @@ export function EscrowPage({ id }: { id: string }) {
 function EscrowView({
   escrow,
   reopened,
+  guest,
 }: {
   escrow: EscrowDetail
   reopened: boolean
+  guest: ReturnType<typeof useGuestAccess>
 }) {
   const { recovery } = useAuth()
   const creator = escrow.viewer.creator
   const status = escrow.status
+  const access = guest.access
+  const joined =
+    !creator &&
+    access !== null &&
+    escrow.submission !== null &&
+    sameWallet(access.wallet, escrow.submission.wallet)
 
   return (
     <>
@@ -100,12 +116,23 @@ function EscrowView({
       )}
       <EscrowWarnings warnings={escrow.warnings} />
 
+      {joined && (
+        <JoinedSection escrow={escrow} access={access} renew={guest.renew} />
+      )}
       {status === "Approved" && <OnChainProgress />}
       {ON_CHAIN.has(status) && <OnChainDone escrow={escrow} />}
       {creator && status === "Open" && <LinkSection link={escrow.link} />}
 
       <MilestonesCard escrow={escrow} />
       <PartiesCard escrow={escrow} />
+
+      {!creator && !recovery && status === "Open" && (
+        <JoinSection
+          escrow={escrow}
+          rejoin={access !== null}
+          onJoined={guest.save}
+        />
+      )}
 
       {creator && status !== "Open" && <LinkSection link={escrow.link} />}
     </>
