@@ -24,6 +24,12 @@ export const WALLET_SCHEME: Record<WalletChain, WalletScheme> = {
   near: "nep413",
 }
 
+export const SCHEME_CHAIN: Record<WalletScheme, WalletChain> = {
+  eip191: "evm",
+  ed25519: "solana",
+  nep413: "near",
+}
+
 type AppKitNamespace = "eip155" | "solana"
 
 const NAMESPACE: Record<Exclude<WalletChain, "near">, AppKitNamespace> = {
@@ -85,6 +91,38 @@ export function useWalletSigner(chain: WalletChain): WalletSigner {
         ns === "eip155" ? signEvm(message) : signSolana(message),
     }
   }, [chain, address, connectNear, disconnectNear, signNearMessage])
+}
+
+/** One signer per chain, for pages that let the visitor pick. */
+export function useWalletSigners(): Record<WalletChain, WalletSigner> {
+  const near = useWalletSigner("near")
+  const solana = useWalletSigner("solana")
+  const evm = useWalletSigner("evm")
+  return useMemo(() => ({ near, solana, evm }), [near, solana, evm])
+}
+
+function sameAddress(scheme: WalletScheme, a: string, b: string) {
+  return scheme === "eip191" ? a.toLowerCase() === b.toLowerCase() : a === b
+}
+
+/**
+ * Connects the signer's wallet and checks it is `expected`. Another
+ * connected account is disconnected first so the wallet can switch.
+ */
+export async function connectWalletAs(
+  signer: WalletSigner,
+  expected: string
+): Promise<string> {
+  if (signer.address && !sameAddress(signer.scheme, signer.address, expected)) {
+    await signer.disconnect()
+  }
+  const address = await signer.connect()
+  if (!sameAddress(signer.scheme, address, expected)) {
+    throw new Error(
+      `Your wallet is on ${address}. Switch to ${expected} and try again.`
+    )
+  }
+  return address
 }
 
 function connectedAddress(namespace: AppKitNamespace): string | undefined {

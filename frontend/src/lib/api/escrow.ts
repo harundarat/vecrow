@@ -1,4 +1,4 @@
-import type { WalletScheme } from "./auth"
+import type { WalletProof, WalletScheme } from "./auth"
 import { apiFetch, type Requester } from "./client"
 
 /** The first three exist only in the backend, before the escrow is on-chain. */
@@ -167,11 +167,98 @@ export function createEscrow(request: Requester, body: CreateEscrowRequest) {
 /** Anyone with the link can read an escrow; a session adds what the viewer may see. */
 export function getEscrow(
   id: string,
-  token: string | null,
+  auth: { token: string | null; guestToken: string | null },
   signal?: AbortSignal
 ) {
-  return apiFetch<EscrowDetail>(`/escrows/${encodeURIComponent(id)}`, {
-    token,
-    signal,
+  return apiFetch<EscrowDetail>(path(id), { ...auth, signal })
+}
+
+/** The details the other party adds, by the role they take. */
+export type CounterpartyDetails =
+  | { freelancer: string; split: SplitShare[] }
+  | { approver: Approver; refund_account: string }
+
+/** The final terms and exactly what the other party's wallet signs. */
+export type TermsResponse = {
+  terms: EscrowTerms
+  message: string
+  /** Hex; NEAR wallets sign with it as the NEP-413 nonce. */
+  nonce: string
+  recipient: string
+}
+
+export type GuestTokenResponse = { guest_token: string; expires_at: string }
+
+export type SubmitResponse = GuestTokenResponse & { escrow: Escrow }
+
+export type ActionResponse = {
+  escrow: Escrow
+  transaction: Transaction | null
+}
+
+export function buildTerms(id: string, details: CounterpartyDetails) {
+  return apiFetch<TermsResponse>(`${path(id)}/terms`, {
+    method: "POST",
+    body: details,
   })
+}
+
+export function submitCounterparty(
+  id: string,
+  body: CounterpartyDetails & {
+    deadline_ms: number
+    signature: string
+    public_key?: string
+  }
+) {
+  return apiFetch<SubmitResponse>(`${path(id)}/counterparty`, {
+    method: "POST",
+    body,
+  })
+}
+
+export function approveSubmission(
+  request: Requester,
+  id: string,
+  body: { signature: string; public_key?: string }
+) {
+  return request<Escrow>(`${path(id)}/counterparty/approve`, {
+    method: "POST",
+    body,
+  })
+}
+
+export function rejectSubmission(request: Requester, id: string) {
+  return request<Escrow>(`${path(id)}/counterparty/reject`, {
+    method: "POST",
+  })
+}
+
+/** Cancels an escrow that is not on-chain yet; creator only. */
+export function cancelEscrow(request: Requester, id: string) {
+  return request<ActionResponse>(`${path(id)}/cancel`, { method: "POST" })
+}
+
+/** Replaces the invitation, or removes it with null; creator only. */
+export function updateInvitation(
+  request: Requester,
+  id: string,
+  invitation: InvitationInput | null
+) {
+  return request<CreatedEscrow>(`${path(id)}/invitation`, {
+    method: "PATCH",
+    body: { invitation },
+  })
+}
+
+/** A new guest token for the wallet that submitted, proven by a signature. */
+export function renewGuestToken(id: string, proof: WalletProof) {
+  return apiFetch<GuestTokenResponse>(`${path(id)}/guest-token`, {
+    method: "POST",
+    body: proof,
+  })
+}
+
+function path(id: string) {
+  return `/escrows/${encodeURIComponent(id)}`
 }

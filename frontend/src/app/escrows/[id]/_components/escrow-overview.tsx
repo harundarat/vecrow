@@ -34,7 +34,7 @@ export function EscrowOverview({ id }: { id: string }) {
     // Wait for the session so the creator sees what only they may see.
     if (status === "loading") return
     const controller = new AbortController()
-    getEscrow(id, token, controller.signal).then(
+    getEscrow(id, { token, guestToken: null }, controller.signal).then(
       (escrow) => setResult({ key, escrow }),
       (err: unknown) => {
         if (controller.signal.aborted) return

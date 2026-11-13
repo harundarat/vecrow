@@ -6,7 +6,9 @@ import {
   getBytes,
   hexlify,
   isHexString,
+  sha256,
   toBeArray,
+  toUtf8Bytes,
   zeroPadValue,
 } from "ethers"
 
@@ -69,6 +71,11 @@ export function nep413Nonce(hexNonce: string): Uint8Array {
     throw new Error("NEP-413 nonce must be 32 bytes of hex")
   }
   return getBytes(hex)
+}
+
+/** The NEP-413 nonce of signed terms: sha256 of their text, as lowercase hex. */
+export function termsNonce(message: string): string {
+  return sha256(toUtf8Bytes(message)).slice(2)
 }
 
 export type Nep413Proof = { signature: string; public_key: string }
