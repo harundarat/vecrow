@@ -183,3 +183,18 @@ export function checkSplit(rows: SplitInput[]): SplitCheck {
   }
   return { bps, accountErrors, shareErrors, totalBps, listError }
 }
+
+/** The contract allows this many revision requests per milestone. */
+export const MAX_REVISIONS = 2
+
+/** The backend keeps a reason of at most this many UTF-8 bytes. */
+export const MAX_REVISION_REASON_BYTES = 2000
+
+export function revisionReasonError(reason: string): string | null {
+  const text = reason.trim()
+  if (!text) return "Say what needs to change."
+  if (new TextEncoder().encode(text).length > MAX_REVISION_REASON_BYTES) {
+    return "Keep it under 2,000 characters."
+  }
+  return null
+}

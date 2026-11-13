@@ -251,6 +251,46 @@ export function updateInvitation(
   })
 }
 
+/** The approver's signature over an action message; no session needed. */
+export type ApproverSignature = {
+  nonce: string
+  deadline_ms: number
+  signature: string
+}
+
+export function approveMilestone(
+  id: string,
+  milestone: number,
+  body: ApproverSignature
+) {
+  return apiFetch<ActionResponse>(
+    `${path(id)}/milestones/${milestone}/approve`,
+    {
+      method: "POST",
+      body,
+    }
+  )
+}
+
+export function requestRevision(
+  id: string,
+  milestone: number,
+  body: ApproverSignature & { reason: string }
+) {
+  return apiFetch<ActionResponse>(
+    `${path(id)}/milestones/${milestone}/revision`,
+    { method: "POST", body }
+  )
+}
+
+/** Cancels a Created escrow with the approver's signature. */
+export function cancelAsApprover(id: string, body: ApproverSignature) {
+  return apiFetch<ActionResponse>(`${path(id)}/cancel`, {
+    method: "POST",
+    body,
+  })
+}
+
 /** A new guest token for the wallet that submitted, proven by a signature. */
 export function renewGuestToken(id: string, proof: WalletProof) {
   return apiFetch<GuestTokenResponse>(`${path(id)}/guest-token`, {
