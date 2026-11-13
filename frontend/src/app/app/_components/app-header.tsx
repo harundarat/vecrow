@@ -42,7 +42,9 @@ export function AppHeader() {
         >
           {NAV.map(({ href, label }) => {
             const active =
-              href === "/app" ? pathname === href : pathname.startsWith(href)
+              href === "/app"
+                ? pathname === href || pathname.startsWith("/app/escrows")
+                : pathname.startsWith(href)
             return (
               <Link
                 key={href}
