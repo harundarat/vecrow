@@ -5,6 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -34,8 +37,16 @@ func fixtureTerms() domain.EscrowTerms {
 	}
 }
 
+// fixtureTermsMessage is the terms message of terms_follow_the_documented_format.
+const fixtureTermsMessage = "Vecrow create_escrow\nContract: escrow.near\nEscrow: e-1\nFreelancer: alice.near\nMilestones: 1000000000,500000000\nSplit: alice.near:7000,bob.near:3000\nApprover: eip191:0xab\nRefund account: carol.near\nFee: 50 bps\nDeadline: 1700000000000"
+
+// fixtureApproveTemplate is the approve_milestone message of
+// messages_follow_the_documented_format, with the nonce as "{}" as written in
+// the fixture; the nonce is 32 bytes of 0xab.
+const fixtureApproveTemplate = "Vecrow approve_milestone\nContract: escrow.test.near\nEscrow: 7\nMilestone: 1\nNonce: {}\nDeadline: 1700000000000"
+
 func TestTermsMessageGolden(t *testing.T) {
-	want := "Vecrow create_escrow\nContract: escrow.near\nEscrow: e-1\nFreelancer: alice.near\nMilestones: 1000000000,500000000\nSplit: alice.near:7000,bob.near:3000\nApprover: eip191:0xab\nRefund account: carol.near\nFee: 50 bps\nDeadline: 1700000000000"
+	want := fixtureTermsMessage
 	if got := fixtureTerms().Message("escrow.near"); got != want {
 		t.Fatalf("Message() =\n%q\nwant\n%q", got, want)
 	}
@@ -46,6 +57,29 @@ func TestTermsNonceIsSHA256OfMessage(t *testing.T) {
 	want := sha256.Sum256([]byte(msg))
 	if got := domain.TermsNonce(msg); got != want {
 		t.Fatalf("TermsNonce() = %x, want %x", got, want)
+	}
+}
+
+// TestGoldenMessagesMatchWalletFixtures checks that the golden messages are
+// still the ones the contract-side fixtures assert, character for character,
+// so a change on either side fails a test.
+func TestGoldenMessagesMatchWalletFixtures(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "contracts", "wallet-fixtures", "src", "lib.rs")
+	src, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the wallet fixtures: %v", err)
+	}
+	for name, msg := range map[string]string{
+		"terms_follow_the_documented_format":    fixtureTermsMessage,
+		"messages_follow_the_documented_format": fixtureApproveTemplate,
+	} {
+		// A Go-quoted ASCII string is the same text as the Rust literal.
+		if lit := strconv.Quote(msg); !strings.Contains(string(src), lit) {
+			t.Errorf("%s: %s does not contain %s", name, path, lit)
+		}
+	}
+	if !strings.Contains(string(src), "let n = nonce(0xab);") {
+		t.Errorf("messages_follow_the_documented_format no longer signs with nonce(0xab)")
 	}
 }
 
@@ -67,8 +101,7 @@ func TestMilestoneActionMessageGolden(t *testing.T) {
 			name: "wallet-fixtures approve",
 			got: domain.MilestoneActionMessage(domain.ActionApproveMilestone, "escrow.test.near", "7", 1,
 				filled(0xab), 1_700_000_000_000),
-			want: "Vecrow approve_milestone\nContract: escrow.test.near\nEscrow: 7\nMilestone: 1\nNonce: " +
-				strings.Repeat("ab", 32) + "\nDeadline: 1700000000000",
+			want: strings.Replace(fixtureApproveTemplate, "{}", strings.Repeat("ab", 32), 1),
 		},
 		{
 			name: "architecture approve example",
