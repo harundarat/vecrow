@@ -108,17 +108,17 @@ after the link is shared (the creator cancels and creates a new escrow instead).
 | R-09 | Gasless meta transaction relayer | Backend | Implemented | [relay.go](../backend/internal/usecase/escrow/relay.go), [near_escrow_contract.go](../backend/internal/repository/near_escrow_contract.go), [nearrpc](../backend/internal/infrastructure/nearrpc/), [neartx](../backend/internal/neartx/) | [escrow_test.go](../backend/internal/usecase/escrow/escrow_test.go), [near_escrow_contract_test.go](../backend/internal/repository/near_escrow_contract_test.go), [signer_test.go](../backend/internal/infrastructure/nearrpc/signer_test.go), [neartx_test.go](../backend/internal/neartx/neartx_test.go), [e2e](../backend/e2e/escrow_e2e_test.go) |
 | R-10 | Client escrow page | Frontend | Planned | | |
 | R-11 | Freelancer dashboard | Frontend | Planned | | |
-| R-12 | CSV export | Backend | Planned | | |
+| R-12 | CSV export | Backend | Implemented | [export.go](../backend/internal/usecase/escrow/export.go), [handler/export.go](../backend/internal/delivery/http/handler/export.go), [usdc.go](../backend/internal/domain/usdc.go) | [export_test.go](../backend/internal/usecase/escrow/export_test.go), [export_routes_test.go](../backend/internal/delivery/http/export_routes_test.go), [usdc_test.go](../backend/internal/domain/usdc_test.go), [e2e](../backend/e2e/escrow_e2e_test.go) |
 | R-13 | Wallet sign-up and login | Backend + frontend | Partial | [login.go](../backend/internal/usecase/auth/login.go), [walletsig](../backend/internal/walletsig/) | [login_test.go](../backend/internal/usecase/auth/login_test.go), [walletsig_test.go](../backend/internal/walletsig/walletsig_test.go) |
-| R-14 | Profile, multiple wallets, email | Backend + frontend | Partial | [account.go](../backend/internal/usecase/auth/account.go) | [account_test.go](../backend/internal/usecase/auth/account_test.go), [account_repository_integration_test.go](../backend/internal/repository/account_repository_integration_test.go) |
-| R-15 | Invite the other party | Backend | Planned | | |
-| R-16 | "My escrows" page | Backend + frontend | Partial | [service.go](../backend/internal/usecase/escrow/service.go), [escrow_repository.go](../backend/internal/repository/escrow_repository.go) | [escrow_repository_integration_test.go](../backend/internal/repository/escrow_repository_integration_test.go), [escrow_routes_test.go](../backend/internal/delivery/http/escrow_routes_test.go), [e2e](../backend/e2e/escrow_e2e_test.go) |
+| R-14 | Profile, multiple wallets, email | Backend + frontend | Partial | [account.go](../backend/internal/usecase/auth/account.go), [otp.go](../backend/internal/usecase/auth/otp.go), [otp_store.go](../backend/internal/repository/otp_store.go), [account_repository.go](../backend/internal/repository/account_repository.go), [mail](../backend/internal/infrastructure/mail/), [handler/me.go](../backend/internal/delivery/http/handler/me.go) | [account_test.go](../backend/internal/usecase/auth/account_test.go), [email_test.go](../backend/internal/usecase/auth/email_test.go), [otp_store_test.go](../backend/internal/repository/otp_store_test.go), [account_repository_integration_test.go](../backend/internal/repository/account_repository_integration_test.go), [mail_test.go](../backend/internal/infrastructure/mail/mail_test.go), [smtp_integration_test.go](../backend/internal/infrastructure/mail/smtp_integration_test.go), [auth_routes_test.go](../backend/internal/delivery/http/auth_routes_test.go) |
+| R-15 | Invite the other party | Backend | Implemented | [invitation.go](../backend/internal/usecase/escrow/invitation.go), [invitation.go (domain)](../backend/internal/domain/invitation.go), [escrow_repository.go](../backend/internal/repository/escrow_repository.go), [account_repository.go](../backend/internal/repository/account_repository.go), [handler/escrow.go](../backend/internal/delivery/http/handler/escrow.go) | [invitation_test.go](../backend/internal/usecase/escrow/invitation_test.go), [escrow_repository_integration_test.go](../backend/internal/repository/escrow_repository_integration_test.go), [escrow_routes_test.go](../backend/internal/delivery/http/escrow_routes_test.go) |
+| R-16 | "My escrows" page | Backend + frontend | Partial | [service.go](../backend/internal/usecase/escrow/service.go), [escrow_repository.go](../backend/internal/repository/escrow_repository.go), [escrows.sql](../backend/internal/repository/queries/escrows.sql) | [escrow_repository_integration_test.go](../backend/internal/repository/escrow_repository_integration_test.go), [invitation_test.go](../backend/internal/usecase/escrow/invitation_test.go), [escrow_routes_test.go](../backend/internal/delivery/http/escrow_routes_test.go), [e2e](../backend/e2e/escrow_e2e_test.go) |
 | R-17 | Request milestone revision | Contract | Implemented | [milestones.rs](../contracts/escrow/src/milestones.rs) | [tests/revision.rs](../contracts/escrow/src/tests/revision.rs), [tests/auto_release.rs](../contracts/escrow/src/tests/auto_release.rs), [sandbox/revision.rs](../contracts/integration-tests/tests/revision.rs), [sandbox/auto_release.rs](../contracts/integration-tests/tests/auto_release.rs) |
 | R-18 | Refund by freelancer | Contract | Implemented | [refund.rs](../contracts/escrow/src/refund.rs) | [tests/refund.rs](../contracts/escrow/src/tests/refund.rs), [sandbox/refund.rs](../contracts/integration-tests/tests/refund.rs), [sandbox/retry.rs](../contracts/integration-tests/tests/retry.rs) |
 | R-19 | 0.5% platform fee | Contract | Implemented | [split.rs](../contracts/escrow/src/split.rs), [payout.rs](../contracts/escrow/src/payout.rs), [create.rs](../contracts/escrow/src/create.rs) | [tests/split.rs](../contracts/escrow/src/tests/split.rs), [tests/approve.rs](../contracts/escrow/src/tests/approve.rs), [tests/create.rs](../contracts/escrow/src/tests/create.rs), [sandbox/approve.rs](../contracts/integration-tests/tests/approve.rs), [sandbox/refund.rs](../contracts/integration-tests/tests/refund.rs), [sandbox/create_cancel.rs](../contracts/integration-tests/tests/create_cancel.rs) |
-| R-20 | Storage registration and payout retry | Contract + backend | Partial | [payout.rs](../contracts/escrow/src/payout.rs), [escrow/jobs.go](../backend/internal/usecase/escrow/jobs.go), [near_escrow_contract.go](../backend/internal/repository/near_escrow_contract.go) | [tests/payout.rs](../contracts/escrow/src/tests/payout.rs), [tests/retry.rs](../contracts/escrow/src/tests/retry.rs), [sandbox/approve.rs](../contracts/integration-tests/tests/approve.rs), [sandbox/retry.rs](../contracts/integration-tests/tests/retry.rs), [sandbox/zero_balance.rs](../contracts/integration-tests/tests/zero_balance.rs), [escrow_test.go](../backend/internal/usecase/escrow/escrow_test.go), [near_escrow_contract_test.go](../backend/internal/repository/near_escrow_contract_test.go), [e2e](../backend/e2e/escrow_e2e_test.go) |
+| R-20 | Storage registration and payout retry | Contract + backend | Implemented | [payout.rs](../contracts/escrow/src/payout.rs), [escrow/jobs.go](../backend/internal/usecase/escrow/jobs.go), [near_escrow_contract.go](../backend/internal/repository/near_escrow_contract.go), [export.go](../backend/internal/usecase/escrow/export.go) | [tests/payout.rs](../contracts/escrow/src/tests/payout.rs), [tests/retry.rs](../contracts/escrow/src/tests/retry.rs), [sandbox/approve.rs](../contracts/integration-tests/tests/approve.rs), [sandbox/retry.rs](../contracts/integration-tests/tests/retry.rs), [sandbox/zero_balance.rs](../contracts/integration-tests/tests/zero_balance.rs), [escrow_test.go](../backend/internal/usecase/escrow/escrow_test.go), [near_escrow_contract_test.go](../backend/internal/repository/near_escrow_contract_test.go), [export_test.go](../backend/internal/usecase/escrow/export_test.go), [e2e](../backend/e2e/escrow_e2e_test.go) |
 | R-21 | Join without an account (guest token) | Backend + frontend | Partial | [guest.go](../backend/internal/usecase/auth/guest.go), [proposal.go](../backend/internal/usecase/escrow/proposal.go), [requester.go](../backend/internal/delivery/http/middleware/requester.go) | [guest_test.go](../backend/internal/usecase/auth/guest_test.go), [guest_token_store_test.go](../backend/internal/repository/guest_token_store_test.go), [escrow_test.go](../backend/internal/usecase/escrow/escrow_test.go), [funding_test.go](../backend/internal/usecase/funding/funding_test.go), [escrow_routes_test.go](../backend/internal/delivery/http/escrow_routes_test.go), [e2e](../backend/e2e/escrow_e2e_test.go) |
-| R-22 | Account recovery via email OTP | Backend + frontend | Planned | | |
+| R-22 | Account recovery via email OTP | Backend + frontend | Partial | [email_login.go](../backend/internal/usecase/auth/email_login.go), [otp.go](../backend/internal/usecase/auth/otp.go), [session.go](../backend/internal/usecase/auth/session.go), [account.go](../backend/internal/usecase/auth/account.go), [middleware/auth.go](../backend/internal/delivery/http/middleware/auth.go), [mail](../backend/internal/infrastructure/mail/) | [email_test.go](../backend/internal/usecase/auth/email_test.go), [session_test.go](../backend/internal/usecase/auth/session_test.go), [otp_store_test.go](../backend/internal/repository/otp_store_test.go), [account_repository_integration_test.go](../backend/internal/repository/account_repository_integration_test.go), [auth_routes_test.go](../backend/internal/delivery/http/auth_routes_test.go), [smtp_integration_test.go](../backend/internal/infrastructure/mail/smtp_integration_test.go) |
 | R-23 | Escrow proposal and creator approval | Backend + frontend | Partial | [proposal.go](../backend/internal/usecase/escrow/proposal.go), [escrow/jobs.go](../backend/internal/usecase/escrow/jobs.go), [escrow_message.go](../backend/internal/domain/escrow_message.go), [escrow_repository.go](../backend/internal/repository/escrow_repository.go), [handler/escrow.go](../backend/internal/delivery/http/handler/escrow.go) | [escrow_test.go (domain)](../backend/internal/domain/escrow_test.go), [escrow_test.go](../backend/internal/usecase/escrow/escrow_test.go), [escrow_repository_integration_test.go](../backend/internal/repository/escrow_repository_integration_test.go), [escrow_routes_test.go](../backend/internal/delivery/http/escrow_routes_test.go), [e2e](../backend/e2e/escrow_e2e_test.go) |
 
 ## 5. Requirements and acceptance criteria
@@ -298,17 +298,17 @@ sending and restored if the transfer fails again.
 - [x] Two consecutive `retry_payout` calls do not pay twice.
 - [x] The backend registers the split recipients and `refund_account` before it calls `create_escrow`.
 - [x] Pending payouts appear in `GET /escrows/:id`.
-- [ ] Pending payouts appear in the CSV export (R-12).
+- [x] Pending payouts appear in the CSV export (R-12).
 - [x] Freelancer and client still need a NEAR balance of 0.
 
-*Partial:* the contract side is done: pending payouts are returned by `get_escrow`, and a
-sandbox test runs the whole flow with a freelancer, a team member and a client holding
-0 NEAR, both parties signing the terms with their wallets and the freelancer acting
-through NEP-366 meta transactions (D-19). The backend registers storage before
-`create_escrow` and before each `retry_payout`, the retry job runs for every pending
-payout, and `GET /escrows/:id` shows the pending payouts (D-23, D-24, D-25); the
-end-to-end test unregisters a split member, then sees the job register them again and
-pay. The CSV export (R-12) is not built yet.
+Pending payouts are returned by `get_escrow`, and a sandbox test runs the whole flow
+with a freelancer, a team member and a client holding 0 NEAR, both parties signing the
+terms with their wallets and the freelancer acting through NEP-366 meta transactions
+(D-19). The backend registers storage before `create_escrow` and before each
+`retry_payout`, the retry job runs for every pending payout, and `GET /escrows/:id` and
+the CSV export show the pending payouts (D-23, D-24, D-25, D-30); the end-to-end test
+unregisters a split member, sees the payout pending in the export, then sees the job
+register them again and pay.
 
 ### Backend
 
@@ -344,8 +344,14 @@ and capped gas, from the escrow's freelancer (D-23).
 Columns: date, escrow, milestone, USDC amount, recipient, tx hash, status. The
 platform fee is a separate row with the treasury as recipient.
 
-- [ ] One row per payout.
-- [ ] Opens cleanly in a spreadsheet without manual cleanup.
+- [x] One row per payout.
+- [x] Opens cleanly in a spreadsheet without manual cleanup.
+
+`GET /escrows/:id/export.csv` builds the rows from the stored transactions and contract
+events, with pending payouts from the last snapshot (D-30). It is RFC 4180 CSV with
+amounts in decimal USDC, dates in UTC, milestones numbered from 1, and cells guarded
+against formula injection. Only the parties of the escrow can download it, with a
+session or a guest token.
 
 #### R-13 — Wallet sign-up and login
 
@@ -366,10 +372,12 @@ An account can link additional wallets (each proven by its own signature) and an
 optional email verified by OTP.
 
 - [x] A wallet already owned by another account is rejected.
-- [ ] An unverified email is not used to match invitations.
+- [x] An unverified email is not used to match invitations.
 
-*Partial:* linking and unlinking wallets is done in the backend; email and its OTP
-verification are not built yet, nor is the frontend.
+*Partial:* the backend is done. `PATCH /me` with an email makes it pending and emails a
+6-digit code; `POST /me/email/verify` makes it the account's verified email (D-26).
+Changing the email needs a wallet session (D-27). Emails are sent over SMTP, or only
+logged in development (D-28). The frontend is not built.
 
 #### R-15 — Invite the other party
 
@@ -381,9 +389,17 @@ only**: anyone with the link can still submit (R-23), and the invited party's ad
 is never taken from their account; it always comes from their own signature (R-03,
 R-04).
 
-- [ ] The escrow appears in the invited party's account.
-- [ ] The other party's address still requires their own signature.
-- [ ] If the submitted wallet is not a wallet of the invited account, the creator is warned before approving, and the invited party is warned on the escrow page.
+- [x] The escrow appears in the invited party's account.
+- [x] The other party's address still requires their own signature.
+- [x] If the submitted wallet is not a wallet of the invited account, the creator is warned before approving, and the invited party is warned on the escrow page.
+
+`POST /escrows` takes an optional `invitation` (`username`, `email` or `wallet`), and
+`PATCH /escrows/:id/invitation` replaces or removes it while the escrow is `Open`,
+`PendingApproval` or `Approved`. Emails and wallets are matched against verified emails
+and linked wallets whenever escrows are read, so an invitation reaches an account that
+verifies the email or links the wallet later. `GET /escrows/:id` shows the invitation to
+the creator and a `submitter_not_invited` warning to the creator and the invited account
+(D-29).
 
 #### R-16 — "My escrows"
 
@@ -396,11 +412,11 @@ included. Filterable by status.
 - [x] The list matches role and status.
 - [x] An escrow appears under its creator's role as soon as it is created.
 - [x] The endpoint requires a valid session.
+- [x] An escrow appears in the invited account, under the role the creator did not take.
 
-*Partial:* `GET /me/escrows` lists escrows by creator role and by the account's wallets
-(freelancer, approver, split member other than the freelancer), at most 200 (D-21).
-Invitations (R-15) do not exist yet, so an invited account does not see an escrow
-until one of its wallets is in it; the frontend is not built.
+*Partial:* `GET /me/escrows` lists escrows by creator role, by the account's wallets
+(freelancer, approver, split member other than the freelancer) and by invitation
+(`invited: true`, D-29), at most 200 (D-21). The frontend is not built.
 
 #### R-21 — Join without an account (guest token)
 
@@ -432,11 +448,16 @@ escrow, approve or reject the other party, change an invitation, change email) r
 a wallet session. Each wallet linked through an email session triggers a notification
 email. Recovery does not restore contract rights.
 
-- [ ] A wrong, expired, or over-limit OTP is rejected.
-- [ ] An unverified email cannot log in.
-- [ ] An email session is rejected by `POST /escrows`, `POST /escrows/:id/counterparty/approve`, `POST /escrows/:id/counterparty/reject`, and `PATCH /escrows/:id/invitation`.
-- [ ] A newly linked wallet can log in normally.
-- [ ] The notification email is sent.
+- [x] A wrong, expired, or over-limit OTP is rejected.
+- [x] An unverified email cannot log in.
+- [x] An email session is rejected by `POST /escrows`, `POST /escrows/:id/counterparty/approve`, `POST /escrows/:id/counterparty/reject`, and `PATCH /escrows/:id/invitation`.
+- [x] A newly linked wallet can log in normally.
+- [x] The notification email is sent.
+
+*Partial:* the backend is done. `POST /auth/email/otp` answers 202 alike for every
+address and never creates an account; `POST /auth/email/verify` opens a recovery session
+of `AUTH_RECOVERY_SESSION_TTL` (1 hour) that only reads the account, links and unlinks
+wallets, and logs out (D-26, D-27). The frontend is not built.
 
 #### R-23 — Escrow proposal and creator approval
 
@@ -479,8 +500,8 @@ nothing is sent to the contract.
 - [x] Both directions work: the freelancer creates and the client joins, and the client creates and the freelancer joins.
 
 *Partial:* the backend is done (architecture.md §6.1, §7.3; D-21); both directions run
-end to end against the contract on a local sandbox. The frontend is not built, and the
-optional invitation of `POST /escrows` belongs to R-15.
+end to end against the contract on a local sandbox. The optional invitation of
+`POST /escrows` is described in R-15. The frontend is not built.
 
 ### Frontend
 
@@ -565,7 +586,7 @@ stateDiagram-v2
 | --- | --- | --- |
 | `GET /tokens` | Supported source chains and tokens (from 1Click) | R-08 |
 | `POST /escrows` | Create an escrow as freelancer or client (milestones, own details, optional invitation); returns the link; wallet session required | R-23, R-03, R-04, R-15 |
-| `GET /escrows/:id` | Escrow details: terms, both parties, pending submission and its message to sign, milestone status, fee, pending payouts, tx links | R-10, R-11, R-20, R-23 |
+| `GET /escrows/:id` | Escrow details: terms, both parties, pending submission and its message to sign, milestone status, fee, pending payouts, tx links; the invitation and warnings for the creator and the invited account | R-10, R-11, R-15, R-20, R-23 |
 | `POST /escrows/:id/terms` | Build the final terms and the exact message to sign from the other party's details; changes nothing | R-23 |
 | `POST /escrows/:id/counterparty` | Submit the other party's details and signature; returns a guest token | R-23, R-21 |
 | `POST /escrows/:id/counterparty/approve` | Creator approves with a signature over the same terms; queues `create_escrow` | R-23, R-01 |
@@ -579,13 +600,13 @@ stateDiagram-v2
 | `POST /escrows/:id/milestones/:n/approve` | Forward signed approval via relayer | R-06, R-09 |
 | `POST /escrows/:id/milestones/:n/revision` | Forward signed revision request + reason | R-17, R-09 |
 | `POST /escrows/:id/refund` | Refund `Pending` milestones via relayer | R-18, R-09 |
-| `GET /escrows/:id/export.csv` | CSV export | R-12 |
+| `GET /escrows/:id/export.csv` | CSV export of the payouts (parties only: session or guest token) | R-12, R-20 |
 | `POST /auth/nonce`, `POST /auth/verify`, `POST /auth/logout` | Wallet login and session | R-13 |
 | `POST /auth/email/otp`, `POST /auth/email/verify` | Recovery login via email OTP | R-22 |
 | `GET /me`, `PATCH /me` | View and edit profile | R-13, R-14 |
 | `POST /me/email/verify` | Verify email with OTP | R-14 |
 | `POST /me/wallets`, `DELETE /me/wallets/:id` | Link and unlink wallets | R-14, R-22 |
-| `GET /me/escrows?role=freelancer\|client\|member&status=…` | Escrows by role, optionally by status | R-16 |
+| `GET /me/escrows?role=freelancer\|client\|member&status=…` | Escrows by role, optionally by status, including invitations | R-16, R-15 |
 
 `create_escrow` (R-23), `auto_release` (R-07), and `retry_payout` (R-20) have no
 endpoint; backend jobs call them directly on the contract.
@@ -614,3 +635,4 @@ endpoint; backend jobs call them directly on the contract.
 - A NEAR approver is tied to the public key in the terms; if that key is removed from the wallet, the client can no longer approve, request revisions or cancel, and milestones are released by auto-release.
 - The contract pays storage for escrows and used nonces from its own NEAR balance (D-19), so that balance has to be monitored.
 - A lost wallet cannot recover contract rights (submit, approve, payouts). Email recovery (R-22) restores the account only.
+- The CSV export (R-12) is built from the transactions the backend sent. Payouts of transactions sent by others (for example an `auto_release` called directly) are missing from it, except amounts that are still pending (D-30).

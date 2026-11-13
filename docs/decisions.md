@@ -33,6 +33,11 @@ consequences, including the trade-offs we accept.
 | [D-23](#d-23--relayer-policy-and-backend-accounts) | Relayer policy and backend accounts | 2026-11-12 | Accepted | R-09, R-20, R-23 |
 | [D-24](#d-24--jobs-hold-a-lease-per-item-and-a-lock-per-escrow) | Jobs hold a lease per item and a lock per escrow | 2026-11-12 | Accepted | R-07, R-08, R-20, R-23 |
 | [D-25](#d-25--funding-success-is-read-from-the-contract-sent-transactions-are-recorded) | Funding success is read from the contract; sent transactions are recorded | 2026-11-12 | Accepted | R-08, R-09, R-20 |
+| [D-26](#d-26--account-emails-are-verified-with-one-time-codes-stored-as-hmacs) | Account emails are verified with one-time codes stored as HMACs | 2026-11-13 | Accepted | R-14, R-22 |
+| [D-27](#d-27--email-recovery-opens-a-short-limited-session) | Email recovery opens a short, limited session | 2026-11-13 | Accepted | R-22 |
+| [D-28](#d-28--emails-go-through-a-mailer-port-smtp-or-log-only-sent-in-the-background) | Emails go through a Mailer port: SMTP or log-only, sent in the background | 2026-11-13 | Accepted | R-14, R-22 |
+| [D-29](#d-29--invitations-are-matched-when-escrows-are-read-and-grant-visibility-only) | Invitations are matched when escrows are read, and grant visibility only | 2026-11-13 | Accepted | R-15, R-16 |
+| [D-30](#d-30--the-csv-export-has-one-row-per-payout-from-the-stored-index) | The CSV export has one row per payout, from the stored index | 2026-11-13 | Accepted | R-12, R-20 |
 
 ---
 
@@ -715,3 +720,180 @@ index.
 - Transactions the backend did not send (for example a direct `ft_transfer_call` or an
   `auto_release` called by someone else) are not in the list; their effects still show
   through `get_escrow`.
+
+## D-26 — Account emails are verified with one-time codes stored as HMACs
+
+**Context.** R-14 adds an optional email per account, used to match invitations (R-15)
+and for recovery (R-22). An email nobody proved control of must not do either, and a
+six-digit code is easy to guess if it can be tried often or read from storage.
+
+**Decision.** (R-14, R-22)
+- An account has a verified email and at most one pending email. `PATCH /me` with an
+  email makes it pending and emails a code; `POST /me/email/verify` with the code makes
+  it the verified email. Only verified emails match invitations or receive sign-in codes.
+  An empty email removes both. A verified email is unique across accounts (checked again
+  when the code is confirmed, 409); pending emails are not, so nobody can block an address
+  by claiming it.
+- Changing the email needs a wallet session; a recovery session (D-27) cannot.
+- Codes are 6 random digits, valid for 10 minutes, with at most 5 attempts; the 6th
+  attempt deletes the code. A new code replaces the previous one and resets the count. A
+  used code is deleted.
+- Redis stores `HMAC-SHA256(salt, purpose ‖ subject ‖ code)` with a random 16-byte salt
+  under `auth:otp:<purpose>:<sha256(subject)>`, and the attempt count next to it. The
+  purpose (`email` verification of an account, `login` for recovery) is part of the MAC,
+  so a code never passes for the other use. Codes are compared with `hmac.Equal`.
+- Codes are sent to one address at most `AUTH_OTP_RATE_LIMIT` times per
+  `AUTH_OTP_RATE_WINDOW` (5 per hour by default), counted in Redis under
+  `auth:rate:<sha256("otp:" + email)>` for every request, whether or not the address has
+  an account. Keys hold hashes, never addresses.
+- Codes, salts and MACs are never logged; logs name the account ID only.
+
+**Alternatives.**
+- Store the code in PostgreSQL: it outlives its 10 minutes unless a job deletes it.
+- Plain SHA-256 of the code: a dump of Redis is reversed by trying a million codes.
+- Magic links instead of codes: the link lands in browser history and proxies' logs.
+
+**Consequences.**
+- A lost Redis drops the pending codes; users ask for a new one.
+- An attacker gets 5 guesses per code and 5 codes per hour per address: about 25 in a
+  million per hour.
+
+## D-27 — Email recovery opens a short, limited session
+
+**Context.** R-22 lets a user who lost their wallet reach their account with an email
+code. D-08 says accounts never grant contract rights, and an email inbox is a weaker
+proof than a wallet: whoever reads the inbox should not be able to commit to escrows.
+
+**Decision.** (R-22)
+- `POST /auth/email/otp` always answers 202 with the same body for a well-formed
+  address: unknown, unverified, known, or when the email could not be queued. Unknown
+  addresses never create an account. The rate limit (D-26) counts all addresses alike.
+  The email is queued in the background (D-28), so the response time does not tell
+  either.
+- `POST /auth/email/verify` checks the code and opens a recovery session if the address is
+  still the verified email of the same account; otherwise it answers like a wrong code.
+- A recovery session is a session (D-13) marked `recovery`, valid for
+  `AUTH_RECOVERY_SESSION_TTL` (1 hour by default, never more than `AUTH_SESSION_TTL`). It
+  may only read the account (`GET /me`), link and unlink wallets, and log out. Every
+  other route that takes a session answers 403, among them `POST /escrows`, the creator's
+  approve and reject, `PATCH /escrows/:id/invitation`, `PATCH /me` (username and email),
+  `POST /me/email/verify`, the escrow list and every escrow route.
+- Every wallet linked in a recovery session emails the account's verified email: the
+  wallet, its scheme and the time, and what to do if it was not the owner.
+
+**Alternatives.**
+- A full session after the email code: the inbox would be enough to create and approve
+  escrows in the user's name.
+- Recovery that also restores contract rights: impossible (D-08) and unsafe.
+
+**Consequences.**
+- After recovery the user links a new wallet and logs in with it to do anything else.
+- An attacker with the inbox can link their own wallet; the notification goes to that same
+  inbox, so it helps only when the owner still reads it. Contract rights stay with the
+  wallets in the terms either way.
+
+## D-28 — Emails go through a Mailer port: SMTP or log-only, sent in the background
+
+**Context.** R-14 and R-22 send codes and notifications. Development needs no mail
+server; production must not silently drop codes; logs must never hold a code (spec §8).
+
+**Decision.** (R-14, R-22)
+- The use cases depend on `usecase.Mailer` (`Send(ctx, to, subject, body)`). The api
+  wires one of:
+  - SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`,
+    `SMTP_TLS`, `SMTP_TIMEOUT`). `SMTP_TLS` is `starttls` (default, required), `tls`
+    (implicit TLS, port 465) or `none`; with `none` the password is only sent to a
+    loopback host, such as a local Mailpit.
+  - Without `SMTP_HOST`, a log-only sender that writes the masked recipient, the subject
+    and the body size, never the body. It is refused in production: there `SMTP_HOST`
+    and `SMTP_FROM` are required.
+- Emails go through an in-process queue with a few workers. `Send` checks the recipient
+  and subject (no header injection) and returns once the email is queued; failures are
+  logged without the body. On shutdown the queue drains for a short time.
+- Emails are plain text. The SMTP password is read from the environment only and never
+  logged.
+
+**Alternatives.**
+- Send through RabbitMQ: emails would survive a restart, but the message would carry the
+  code through another system; codes expire in 10 minutes anyway.
+- An email API provider SDK: SMTP works with any provider and with Mailpit locally.
+
+**Consequences.**
+- Emails queued when the api stops abruptly are lost; the user asks for a new code.
+- A full queue answers like an SMTP failure: the verification request fails with 503,
+  and the recovery request still answers 202.
+
+## D-29 — Invitations are matched when escrows are read, and grant visibility only
+
+**Context.** R-15 lets the creator name the other party by username, email or wallet
+so the escrow shows in their account (R-16), even if they sign up or verify the email
+later. D-08: an invitation must never decide who the counterparty is.
+
+**Decision.** (R-15, R-16)
+- An escrow has at most one invitation, set with `POST /escrows` or replaced or removed
+  (`null`) with `PATCH /escrows/:id/invitation` by the creator, while the escrow is `Open`,
+  `PendingApproval` or `Approved`; later it is 409.
+- A username is resolved to its account when the invitation is made and must exist. An
+  email or a wallet is stored as given and matched whenever escrows are read: against
+  verified emails (D-26) and linked wallets. So the invitation reaches the account that
+  verifies the email or links the wallet later, and stops reaching one that removes it.
+- The creator cannot invite their own account; if the creator later verifies the email
+  or links the wallet, the invitation matches nobody.
+- The invited account sees the escrow in `GET /me/escrows` under the role the creator
+  did not take, with `invited: true`, until it has a role of its own.
+- `GET /escrows/:id` shows the invitation to the creator only, and tells the viewer
+  whether they are the creator or the invited account. When the wallet that submitted is
+  neither the invited wallet nor a wallet of the invited account, both the creator and the
+  invited account get a `submitter_not_invited` warning; nobody else sees it.
+- Whether the invited party has an account is never shown. No invitation email is sent;
+  the creator shares the link.
+
+**Alternatives.**
+- Resolve emails and wallets once, at invite time: an invitation to someone without an
+  account would never reach them.
+- Let the invitation restrict who may submit: an account would then decide the
+  counterparty, against D-08.
+
+**Consequences.**
+- Listing escrows joins invitations on emails and wallets; the join is indexed.
+- A wrong email in an invitation shows the escrow to whoever verifies that address. They
+  only see the escrow; the creator still checks the submitted wallets before approving.
+
+## D-30 — The CSV export has one row per payout, from the stored index
+
+**Context.** R-12 asks for a CSV with one row per payout, the fee as its own row, and
+pending payouts included (R-20). The contract keeps no history, and the treasury
+account is not readable from it.
+
+**Decision.** (R-12, R-20)
+- `GET /escrows/:id/export.csv` is built from the stored transactions and their NEP-297
+  events (D-25) and the last stored `get_escrow` snapshot; it does not read the chain.
+- Each `payout` event that follows a `milestone_released` or `milestones_refunded` event
+  in a transaction is one row: the fee to the treasury (so the treasury is the recipient),
+  each split share, and a refund (listing all refunded milestones, e.g. `2, 3`). Zero
+  amounts are never paid, so they have no row.
+- A failed transfer is a `pending` row. A successful `retry_payout` pays the recipient's
+  whole pending amount, so it marks that recipient's pending rows `paid` with the retry's
+  date and hash; a rest of the retried amount is a row of its own. A pending amount in the
+  snapshot beyond what the pending rows explain is a `pending` row without a hash. Rows
+  are never marked paid without a stored transaction that paid them.
+- Rows follow the order of the transactions that paid them. Milestones are numbered from
+  1. Dates are UTC as `YYYY-MM-DD HH:MM:SS`; amounts are decimal USDC with six decimals.
+- The file is RFC 4180 (CRLF, quoted fields) with the header `date, escrow, milestone,
+  USDC amount, recipient, tx hash, status`. A cell that starts with `=`, `+`, `-`, `@`, a
+  tab or a line break, or their full-width forms, gets a leading `'`.
+- Only the parties may download it: the creator, a session whose account owns a party
+  wallet (freelancer, split member, approver), or a guest token of the escrow whose wallet
+  is a party. An invited account is not a party until one of its wallets is. A recovery
+  session is refused (D-27).
+
+**Alternatives.**
+- One row per transfer attempt: a failed and a retried transfer would count twice.
+- Read the history from an indexer: another service, for data the backend already has.
+- Configure the treasury account to label fee rows: the recipient column already shows
+  it, and a wrong setting would mislabel rows.
+
+**Consequences.**
+- Payouts of transactions the backend did not send (D-25) are missing, except pending
+  amounts, which the snapshot still shows.
+- The escrow page itself stays public by link; the export is limited to the parties.

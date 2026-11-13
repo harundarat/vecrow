@@ -530,7 +530,8 @@ succeeded, so the job can tell whether the account is registered yet.
 | Relayer | Forwards signed actions and approved escrow terms to the Vecrow contract and pays gas | R-09, R-23 |
 | Storage | `storage_balance_of` checks and `storage_deposit` registration | R-20 |
 | Jobs | `create_escrow` for approved escrows, `auto_release` when the window ends, `retry_payout` for pending payouts | R-07, R-20, R-23 |
-| Export | CSV export, one row per payout, fee as its own row | R-12 |
+| Mail | One-time codes and notifications, over SMTP or only to the log in development, sent in the background | R-14, R-22 |
+| Export | CSV export from the stored transaction index, one row per payout, fee as its own row | R-12, R-20 |
 
 ### 7.2 Data
 
@@ -546,11 +547,12 @@ Tables (migrations in `backend/migrations`, queries in
 
 | Table | Holds |
 | --- | --- |
-| `accounts`, `wallets` | Accounts and their linked wallets, one account per wallet (section 7.5) |
+| `accounts`, `wallets` | Accounts and their linked wallets, one account per wallet (section 7.5); the account's verified email (unique) and a pending email waiting for its code (section 7.6) |
 | `escrows` | One row per escrow: creator account and role, status, `fee_bps`, the creator's own details, and, once on-chain, a snapshot of `get_escrow` (review window, balance, timestamps) with the block height it was read at |
 | `escrow_milestones` | Amounts as proposed, then each milestone's on-chain status, submission time and revision count; finds milestones due for `auto_release` |
 | `escrow_submissions` | The other party's submission: the terms, the exact message signed, its deadline, the submitting wallet, both signatures and keys, and how it ended (`pending`, `approved`, `created`, `rejected`, `expired`, `failed`, `cancelled`). At most one is active per escrow |
 | `escrow_parties` | Wallets with a role in the escrow (freelancer, client, member), rewritten from the creator's details and the active submission; drives "My escrows" (R-16) |
+| `escrow_invitations` | At most one invitation per escrow: an account (by username), an email or a wallet, matched against verified emails and linked wallets when escrows are read (section 7.7) |
 | `escrow_pending_payouts` | Pending payouts from the latest `get_escrow`; finds payouts due for `retry_payout` |
 | `escrow_transactions` | Every transaction the backend sent for an escrow: hash, method, signer (who paid gas), sender (who the call acts as), receiver, result |
 | `escrow_events` | NEP-297 events (section 5.5) the contract logged in those transactions |
@@ -560,8 +562,10 @@ Tables (migrations in `backend/migrations`, queries in
 The status of an escrow is `Open`, `PendingApproval` or `Approved` while it exists only
 in PostgreSQL; from `Created` on it mirrors the contract. Redis holds what expires:
 login nonces (`auth:nonce:`), sessions (`auth:session:`), guest tokens (`auth:guest:`),
-transaction nonces claimed for the backend keys (`near:nonce:`), and job leases and
-escrow locks (`jobs:`). Tokens are stored only as SHA-256 hashes.
+one-time email codes and their attempt counts (`auth:otp:`), per-email code rate limits
+(`auth:rate:`), transaction nonces claimed for the backend keys (`near:nonce:`), and job
+leases and escrow locks (`jobs:`). Tokens are stored only as SHA-256 hashes and codes
+only as salted HMACs; keys hold hashes of emails, never the addresses.
 
 ### 7.3 Jobs
 
@@ -610,7 +614,8 @@ safe.
 Every transaction a job or the relayer sends is stored in `escrow_transactions` with the
 NEP-297 events of the contract (`escrow_events`), whether it succeeded or not.
 `GET /escrows/:id` lists them with an explorer link (`NEAR_EXPLORER_TX_URL` + hash), and
-shows the pending payouts of the latest `get_escrow` (D-25).
+shows the pending payouts of the latest `get_escrow` (D-25). The CSV export is built from
+the same index (section 7.8).
 
 ### 7.4 Code structure
 
@@ -623,7 +628,7 @@ Dependencies point inward:
 | Use cases | `internal/usecase/...` | Domain, and the ports (interfaces) each use case declares |
 | Repositories | `internal/repository` | Use-case ports, generic infrastructure interfaces |
 | Delivery | `internal/delivery/http` (Gin), `internal/delivery/worker` (queue consumers) | Use cases, through interfaces |
-| Infrastructure | `internal/infrastructure/{database,cache,queue,logger,nearrpc,oneclick}` | Driver libraries; `nearrpc` (NEAR JSON-RPC, transaction signing and sending) builds on `internal/neartx` |
+| Infrastructure | `internal/infrastructure/{database,cache,queue,logger,nearrpc,oneclick,mail}` | Driver libraries; `nearrpc` (NEAR JSON-RPC, transaction signing and sending) builds on `internal/neartx`; `mail` sends over SMTP with `net/smtp` |
 | Codecs | `internal/neartx` (Borsh transactions, delegate actions, keys), `internal/walletsig` (EIP-191, Solana, NEP-413 verification) | Standard library and crypto libraries |
 | Composition root | `internal/bootstrap`, `cmd/api`, `cmd/worker` | Everything; the only place concrete technologies are chosen |
 
@@ -687,6 +692,72 @@ opaque random string; Redis stores only its SHA-256, with the `AUTH_SESSION_TTL`
 A wallet belongs to at most one account (`UNIQUE (scheme, address)`), and the last wallet
 of an account cannot be unlinked.
 
+### 7.6 Email and recovery (R-14, R-22)
+
+An account may add one email (D-26):
+
+1. `PATCH /me {email}` with a wallet session stores it as `pending_email` and emails a
+   6-digit code. `{"email": ""}` removes the email.
+2. `POST /me/email/verify {code}` makes the pending email the account's `email`. A
+   verified email belongs to at most one account (409 otherwise).
+
+Only the verified email matches invitations and receives sign-in codes. Codes are valid
+for 10 minutes and 5 attempts, are stored in Redis as a salted HMAC bound to their
+purpose (`email` or `login`) and subject, and are compared in constant time. Each address
+receives at most `AUTH_OTP_RATE_LIMIT` codes per `AUTH_OTP_RATE_WINDOW`.
+
+Recovery (D-27):
+
+1. `POST /auth/email/otp {email}` always answers `202 {message, expires_in_seconds}`.
+   Only a verified email of an account gets a code; unknown addresses create nothing.
+2. `POST /auth/email/verify {email, code}` returns `{token, expires_at, recovery: true,
+   account}`. The session lasts `AUTH_RECOVERY_SESSION_TTL` (at most `AUTH_SESSION_TTL`).
+3. With it the user may call `GET /me`, `POST /me/wallets`, `DELETE /me/wallets/:id` and
+   `POST /auth/logout`. Every other route that reads a session answers 403. Each wallet
+   linked this way emails the account's verified email.
+
+The use cases send email through the `usecase.Mailer` port (D-28). `bootstrap` wires an
+SMTP sender (`SMTP_*`, STARTTLS by default) or, without `SMTP_HOST` and outside
+production, a log-only sender that logs the masked recipient and subject but never the
+body. Both sit behind an in-process queue, so a request never waits on the mail server.
+
+### 7.7 Invitations (R-15, R-16)
+
+`POST /escrows` takes an optional `invitation` with exactly one of `username`, `email` or
+`wallet {scheme, address}`; `PATCH /escrows/:id/invitation {invitation}` replaces it, or
+removes it with `null`, while the escrow is `Open`, `PendingApproval` or `Approved`
+(D-29). A username must exist and is stored as its account; an email or wallet is
+stored as given and matched on every read against verified emails and linked wallets.
+The creator's own account is never matched.
+
+`GET /me/escrows` lists invited escrows under the role the creator did not take, with
+`invited: true`. `GET /escrows/:id` returns `viewer {creator, invited}`, the invitation
+to the creator only, and `warnings` with `submitter_not_invited` to the creator and the
+invited account when the submitting wallet is not theirs. The invitation never changes
+the terms: every address in them still comes from a signature.
+
+### 7.8 CSV export (R-12)
+
+`GET /escrows/:id/export.csv` returns `text/csv` as an attachment, built from
+`escrow_transactions`, `escrow_events` and `escrow_pending_payouts` without reading the
+chain (D-30):
+
+```
+date,escrow,milestone,USDC amount,recipient,tx hash,status
+2026-11-13 09:30:05,e1,1,5.000000,treasury.near,9xK…,paid
+2026-11-13 09:30:05,e1,1,696.500000,alice.near,9xK…,paid
+2026-11-13 09:31:12,e1,1,298.500000,bob.near,4Fq…,paid
+2026-11-13 10:02:40,e1,"2, 3",800.000000,client.near,7Hd…,paid
+```
+
+Each `payout` event after a `milestone_released` or `milestones_refunded` event in a
+transaction is one row; a failed transfer is `pending` until a stored `retry_payout`
+pays it, and then carries the retry's date and hash. Pending amounts in the snapshot that
+no stored event explains are added as `pending` rows. Dates are UTC; amounts are decimal
+USDC; cells starting with `=`, `+`, `-`, `@`, a tab or a line break get a leading `'`.
+The creator, an account with a party wallet, or a guest token whose wallet is a party
+may download it.
+
 ## 8. Trust boundaries
 
 | Actor | Can | Cannot |
@@ -697,6 +768,8 @@ of an account cannot be unlinked.
 | Relayer | Pay gas for calls to the Vecrow contract, including `create_escrow` | Approve, forge or alter signed payloads or terms, call other contracts |
 | Backend | Store escrows until they are on-chain, create on-chain the escrows both parties signed, register storage, run jobs, manage accounts | Change signed terms, create an escrow without both signatures, move USDC (except under the D-09 fallback) |
 | Account / session | Show escrows, act as a login, start an escrow | Grant any right in the contract |
+| Recovery session (email code) | View the account, link and unlink wallets | Create, approve or reject escrows, change an invitation or the email, view escrows; grant any right in the contract |
+| Invitation | Show the escrow in the invited account | Choose an address in the terms, stop anyone else from submitting |
 
 ## 9. Networks and configuration
 
@@ -706,7 +779,8 @@ of an account cannot be unlinked.
 | Mainnet (demo) | Separate development account | USDC (contract ID from the 1Click token list) | 1Click with small amounts |
 
 Configuration such as RPC URL, contract and treasury account IDs, the relayer and
-backend keys, the PostgreSQL and RabbitMQ URLs, the 1Click API settings, the review
-window, and the signing deadline for escrow terms is read from environment variables.
+backend keys, the PostgreSQL and RabbitMQ URLs, the 1Click API settings, the SMTP
+server, the review window, and the signing deadline for escrow terms is read from
+environment variables.
 Every variable is listed in the `.env.example` file of `backend/` and `frontend/`
 without real values; keys are never committed.

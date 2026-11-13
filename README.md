@@ -177,9 +177,20 @@ account (`STORAGE_ACCOUNT_ID`, `STORAGE_PRIVATE_KEY`), which pays `storage_depos
 are NEAR accounts of the backend with a NEAR balance; their keys come only from the
 environment (D-23). `ONECLICK_API_KEY` is the optional 1Click JWT. Every variable is described in
 `.env.example`. Wallet login for the frontend is described in
-[architecture.md §7.5](docs/architecture.md#75-wallet-login-r-13-r-14), the escrow flow
-in [§6](docs/architecture.md#6-key-flows), and the jobs in
+[architecture.md §7.5](docs/architecture.md#75-wallet-login-r-13-r-14), email
+verification and recovery in [§7.6](docs/architecture.md#76-email-and-recovery-r-14-r-22),
+invitations in [§7.7](docs/architecture.md#77-invitations-r-15-r-16), the CSV export in
+[§7.8](docs/architecture.md#78-csv-export-r-12), the escrow flow in
+[§6](docs/architecture.md#6-key-flows), and the jobs in
 [§7.3](docs/architecture.md#73-jobs).
+
+The API emails one-time codes (email verification, recovery login) and a notice for
+each wallet linked during recovery. Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`,
+`SMTP_PASSWORD` and `SMTP_FROM` (STARTTLS by default; `SMTP_TLS=tls` for port 465);
+`SMTP_HOST` and `SMTP_FROM` are required in production. In development, without `SMTP_HOST`, emails are only logged
+(masked recipient and subject, never the body or the code); to read them, run a mail
+catcher such as [Mailpit](https://mailpit.axllent.org) on `localhost:1025` with
+`SMTP_HOST=localhost`, `SMTP_PORT=1025`, `SMTP_TLS=none`.
 
 `make test-e2e` builds the contracts (`make -C ../contracts build`, needs cargo-near),
 starts the nearcore sandbox version pinned in `contracts/Makefile` (through the
@@ -188,7 +199,8 @@ mock-ft contracts, and runs the API and the worker against PostgreSQL, Redis and
 RabbitMQ from `make compose-up` and a fake 1Click server. Each run uses a fresh
 database next to `DATABASE_URL` and needs goose on `PATH`. It covers both directions
 (freelancer or client creates) with freelancer and client holding 0 NEAR: creation
-on-chain, funding, submit, revision, approval, payout retry, auto-release and refund.
+on-chain, funding, submit, revision, approval, payout retry, auto-release and refund,
+and the CSV export after the approval and after the refund.
 
 `make help` lists every target. After adding or changing a query in
 `internal/repository/queries/`, run `make sqlc`
