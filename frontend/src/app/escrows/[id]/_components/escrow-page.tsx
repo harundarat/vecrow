@@ -8,6 +8,7 @@ import { useAuth } from "@/context/auth"
 import { useEscrowDetail } from "@/hooks/use-escrow-detail"
 import type { useGuestAccess } from "@/hooks/use-guest-access"
 import type { EscrowDetail, EscrowStatus } from "@/lib/api/escrow"
+import { approverView, isFreelancer } from "@/lib/escrow-viewer"
 import { sameWallet } from "@/lib/guest-access"
 import {
   EscrowHeader,
@@ -16,6 +17,7 @@ import {
   PartiesCard,
 } from "./escrow-details"
 import { CancelSection } from "./cancel-section"
+import { FundingLocked, FundingSection } from "./funding-section"
 import { InvitationSection } from "./invitation-section"
 import { JoinSection } from "./join-section"
 import { JoinedSection } from "./joined-section"
@@ -95,7 +97,7 @@ function EscrowView({
   guest: ReturnType<typeof useGuestAccess>
   reload: () => void
 }) {
-  const { recovery } = useAuth()
+  const { recovery, account, token } = useAuth()
   const creator = escrow.viewer.creator
   const status = escrow.status
   const access = guest.access
@@ -106,6 +108,14 @@ function EscrowView({
     sameWallet(access.wallet, escrow.submission.wallet)
   const reviewing =
     creator && status === "PendingApproval" && escrow.submission !== null
+  const approver = approverView(
+    escrow,
+    access,
+    account,
+    recovery ? null : token
+  )
+  const approverActs = approver.approver && !recovery
+  const fundingAuth = approverActs ? approver.fundingAuth : null
 
   return (
     <>
@@ -145,6 +155,16 @@ function EscrowView({
       )}
       {status === "Approved" && <OnChainProgress />}
       {ON_CHAIN.has(status) && <OnChainDone escrow={escrow} />}
+      {(status === "Created" || status === "Funded") && fundingAuth && (
+        <FundingSection escrow={escrow} auth={fundingAuth} onFunded={reload} />
+      )}
+      {status === "Created" && !fundingAuth && (
+        <FundingLocked
+          escrow={escrow}
+          freelancer={isFreelancer(escrow, access, account)}
+          expired={approverActs}
+        />
+      )}
       {creator && status === "Open" && <LinkSection link={escrow.link} open />}
 
       <MilestonesCard escrow={escrow} />

@@ -12,10 +12,12 @@ import {
 import { useGuestAccess } from "./use-guest-access"
 
 // Approved turns into Created within a minute or two, so it is polled
-// often; a pending submission waits for a person and is polled slowly.
+// often; the others wait for a person and are polled slowly.
 const POLL_MS: Partial<Record<EscrowStatus, number>> = {
   Approved: 4000,
   PendingApproval: 15000,
+  Created: 30000,
+  Funded: 30000,
 }
 
 type State = { escrow: EscrowDetail | null; error: string | null }

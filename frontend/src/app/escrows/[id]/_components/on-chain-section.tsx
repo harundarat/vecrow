@@ -36,7 +36,7 @@ export function OnChainDone({ escrow }: { escrow: EscrowDetail }) {
       title="On-chain"
       description={
         escrow.status === "Created"
-          ? "The escrow is on NEAR. Paying in is not on this page yet."
+          ? "The escrow is on NEAR and waits for the client to pay in."
           : "The escrow is on NEAR."
       }
     >
