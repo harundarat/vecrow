@@ -2,6 +2,16 @@ import { Badge } from "@/components/ui/badge"
 import type { EscrowStatus } from "@/lib/api/escrow"
 import { cn } from "@/utils"
 
+export const ESCROW_STATUS_LABEL: Record<EscrowStatus, string> = {
+  Open: "Open",
+  PendingApproval: "Pending approval",
+  Approved: "Approved",
+  Created: "Created",
+  Funded: "Funded",
+  Completed: "Completed",
+  Cancelled: "Cancelled",
+}
+
 /** What each status means for the people in the escrow. */
 export const ESCROW_STATUS_HINT: Record<EscrowStatus, string> = {
   Open: "Waiting for the other party to join",
@@ -39,7 +49,7 @@ export function EscrowStatusBadge({
         className
       )}
     >
-      {status}
+      {ESCROW_STATUS_LABEL[status] ?? status}
     </Badge>
   )
 }

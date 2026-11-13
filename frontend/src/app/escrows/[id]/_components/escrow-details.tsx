@@ -5,7 +5,7 @@ import {
 } from "@/components/escrow-status-badge"
 import { FormSection } from "@/components/form-section"
 import { Badge } from "@/components/ui/badge"
-import type { Approver, EscrowDetail } from "@/lib/api/escrow"
+import type { Approver, EscrowDetail, MilestoneStatus } from "@/lib/api/escrow"
 import { formatPercent } from "@/lib/escrow-rules"
 import {
   ESCROW_ROLE_LABEL,
@@ -17,6 +17,14 @@ import { formatUsdc, sumUsdc } from "@/lib/usdc"
 import { cn } from "@/utils"
 
 /** "NEAR · alice.near" or "EVM · 0x12…". */
+const MILESTONE_STATUS_LABEL: Record<MilestoneStatus, string> = {
+  Pending: "Pending",
+  Submitted: "Submitted",
+  RevisionRequested: "Revision requested",
+  Released: "Released",
+  Refunded: "Refunded",
+}
+
 export function approverLabel(approver: Approver): string {
   const address = approver.account_id ?? approver.address ?? ""
   return `${WALLET_SCHEME_LABEL[approver.scheme] ?? approver.scheme} · ${address}`
@@ -80,7 +88,9 @@ export function MilestonesCard({ escrow }: { escrow: EscrowDetail }) {
           >
             <span>Milestone {milestone.index + 1}</span>
             <span className="flex items-center gap-3">
-              <span className="text-muted-foreground">{milestone.status}</span>
+              <span className="text-muted-foreground">
+                {MILESTONE_STATUS_LABEL[milestone.status] ?? milestone.status}
+              </span>
               <span className="tabular-nums">
                 {formatUsdc(milestone.amount)} USDC
               </span>

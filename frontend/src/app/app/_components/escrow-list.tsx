@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 import {
   ESCROW_STATUS_HINT,
+  ESCROW_STATUS_LABEL,
   EscrowStatusBadge,
 } from "@/components/escrow-status-badge"
 import { Badge } from "@/components/ui/badge"
@@ -49,7 +50,10 @@ const ROLE_TABS: Array<{ value: RoleTab; label: string }> = [
 
 const STATUS_ITEMS: Array<{ value: StatusFilter; label: string }> = [
   { value: "all", label: "All statuses" },
-  ...ESCROW_STATUSES.map((status) => ({ value: status, label: status })),
+  ...ESCROW_STATUSES.map((status) => ({
+    value: status,
+    label: ESCROW_STATUS_LABEL[status],
+  })),
 ]
 
 type Result = { key: string; escrows?: MyEscrow[]; error?: string }
