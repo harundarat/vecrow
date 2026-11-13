@@ -7,7 +7,7 @@ import { FeedbackMessage } from "@/components/feedback-message"
 import { useAuth } from "@/context/auth"
 import { useEscrowDetail } from "@/hooks/use-escrow-detail"
 import type { useGuestAccess } from "@/hooks/use-guest-access"
-import type { EscrowDetail } from "@/lib/api/escrow"
+import type { EscrowDetail, EscrowStatus } from "@/lib/api/escrow"
 import { sameWallet } from "@/lib/guest-access"
 import {
   EscrowHeader,
@@ -15,12 +15,23 @@ import {
   MilestonesCard,
   PartiesCard,
 } from "./escrow-details"
+import { CancelSection } from "./cancel-section"
+import { InvitationSection } from "./invitation-section"
 import { JoinSection } from "./join-section"
 import { JoinedSection } from "./joined-section"
 import { LinkSection } from "./link-section"
 import { OnChainDone, OnChainProgress } from "./on-chain-section"
+import { ReviewSection } from "./review-section"
 
-const ON_CHAIN = new Set(["Created", "Funded", "Completed"])
+const ON_CHAIN = new Set<EscrowStatus>(["Created", "Funded", "Completed"])
+// The creator can change the invitation until the escrow is on-chain, and
+// cancel it until it is approved.
+const INVITATION_EDITABLE = new Set<EscrowStatus>([
+  "Open",
+  "PendingApproval",
+  "Approved",
+])
+const CANCELLABLE = new Set<EscrowStatus>(["Open", "PendingApproval"])
 
 export function EscrowPage({ id }: { id: string }) {
   const { status } = useAuth()
@@ -51,6 +62,7 @@ export function EscrowPage({ id }: { id: string }) {
           escrow={detail.escrow}
           reopened={detail.reopened}
           guest={detail.guest}
+          reload={detail.reload}
         />
       ) : detail.error ? (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed px-4 py-12 text-center">
@@ -76,10 +88,12 @@ function EscrowView({
   escrow,
   reopened,
   guest,
+  reload,
 }: {
   escrow: EscrowDetail
   reopened: boolean
   guest: ReturnType<typeof useGuestAccess>
+  reload: () => void
 }) {
   const { recovery } = useAuth()
   const creator = escrow.viewer.creator
@@ -90,6 +104,8 @@ function EscrowView({
     access !== null &&
     escrow.submission !== null &&
     sameWallet(access.wallet, escrow.submission.wallet)
+  const reviewing =
+    creator && status === "PendingApproval" && escrow.submission !== null
 
   return (
     <>
@@ -114,14 +130,22 @@ function EscrowView({
           }}
         />
       )}
-      <EscrowWarnings warnings={escrow.warnings} />
+      {reviewing && escrow.submission ? (
+        <ReviewSection
+          escrow={escrow}
+          submission={escrow.submission}
+          onDone={reload}
+        />
+      ) : (
+        <EscrowWarnings warnings={escrow.warnings} />
+      )}
 
       {joined && (
         <JoinedSection escrow={escrow} access={access} renew={guest.renew} />
       )}
       {status === "Approved" && <OnChainProgress />}
       {ON_CHAIN.has(status) && <OnChainDone escrow={escrow} />}
-      {creator && status === "Open" && <LinkSection link={escrow.link} />}
+      {creator && status === "Open" && <LinkSection link={escrow.link} open />}
 
       <MilestonesCard escrow={escrow} />
       <PartiesCard escrow={escrow} />
@@ -134,7 +158,15 @@ function EscrowView({
         />
       )}
 
-      {creator && status !== "Open" && <LinkSection link={escrow.link} />}
+      {creator && INVITATION_EDITABLE.has(status) && (
+        <InvitationSection escrow={escrow} onDone={reload} />
+      )}
+      {creator && status !== "Open" && status !== "Cancelled" && (
+        <LinkSection link={escrow.link} open={false} />
+      )}
+      {creator && CANCELLABLE.has(status) && (
+        <CancelSection escrowId={escrow.id} onDone={reload} />
+      )}
     </>
   )
 }

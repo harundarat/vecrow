@@ -2,11 +2,15 @@ import { CopyButton } from "@/components/copy-button"
 import { FormSection } from "@/components/form-section"
 import { Input } from "@/components/ui/input"
 
-export function LinkSection({ link }: { link: string }) {
+export function LinkSection({ link, open }: { link: string; open: boolean }) {
   return (
     <FormSection
       title="Link"
-      description="Send this link to the other party so they can join."
+      description={
+        open
+          ? "Send this link to the other party so they can join."
+          : "Both parties can follow this escrow at this link."
+      }
     >
       <div className="flex flex-col gap-2 sm:flex-row">
         <Input
