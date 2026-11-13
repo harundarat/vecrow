@@ -9,8 +9,10 @@
 package e2e_test
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -19,6 +21,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -629,6 +632,45 @@ func (w *world) freelancerCreates(t *testing.T) {
 		r.Escrow.PendingPayouts[0].Amount != memberShare0.String() {
 		t.Fatalf("pending payouts after approve = %+v", r.Escrow.PendingPayouts)
 	}
+	approveHash := r.Transaction.Hash
+
+	// The CSV export after the approval: the fee and the freelancer's share
+	// paid, the member's share pending. The retry job may already have paid
+	// it; then its row carries the retry's hash.
+	f0, mem0 := shares(m0, 3000)
+	rows := w.exportCSV(t, id, guestHeader(guest)...)
+	memberRow := slices.IndexFunc(rows, func(row []string) bool { return row[4] == memberID })
+	if memberRow < 0 {
+		t.Fatalf("no member row after approve: %q", rows)
+	}
+	memberHash := approveHash
+	if rows[memberRow][6] != "pending" {
+		memberHash = w.get(t, id).txs("retry_payout")[0].Hash
+		t.Logf("the retry job paid the member before the export")
+	}
+	w.checkCSV(t, rows, id, []csvRow{
+		{"1", fee(m0), w.treasury, approveHash, "paid"},
+		{"1", f0, f.id, approveHash, "paid"},
+		{"1", mem0, memberID, memberHash, rows[memberRow][6]},
+	})
+	// Only the parties can download it: the split member with a session can,
+	// nobody else.
+	memberToken := w.loginNEAR(t, memberID, memberKey)
+	if got := w.exportCSV(t, id, bearer(memberToken)...); len(got) != len(rows) {
+		t.Errorf("member's export = %q", got)
+	}
+	strangerToken := w.loginNEAR(t, w.solver.id, w.solver.key)
+	for name, c := range map[string]struct {
+		auth   []string
+		status int
+	}{
+		"no credentials": {nil, http.StatusUnauthorized},
+		"stranger":       {bearer(strangerToken), http.StatusForbidden},
+	} {
+		if res := w.app.do(t, http.MethodGet, "/escrows/"+id+"/export.csv", nil, c.auth...); res.status != c.status {
+			t.Errorf("export by %s: status %d, want %d: %s", name, res.status, c.status, res.body)
+		}
+	}
 
 	// The payout retry job registers the member again (the storage account
 	// pays), then calls retry_payout.
@@ -673,11 +715,24 @@ func (w *world) freelancerCreates(t *testing.T) {
 	if got := w.chainStatus(t, id); got != "Completed" {
 		t.Fatalf("get_escrow status %q", got)
 	}
+	refundHash := r.Transaction.Hash
+
+	// The CSV export after the refund: one row per payout, all paid, in the
+	// order of the transactions that paid them. The member's first share is
+	// paid by the retry.
+	f1, mem1 := shares(m1, 3000)
+	w.checkCSV(t, w.exportCSV(t, id, bearer(token)...), id, []csvRow{
+		{"1", fee(m0), w.treasury, approveHash, "paid"},
+		{"1", f0, f.id, approveHash, "paid"},
+		{"1", mem0, memberID, retry.Hash, "paid"},
+		{"2", fee(m1), w.treasury, auto[0].Hash, "paid"},
+		{"2", f1, f.id, auto[0].Hash, "paid"},
+		{"2", mem1, memberID, auto[0].Hash, "paid"},
+		{"3", m2, c.id, refundHash, "paid"},
+	})
 
 	// Balances: fee to the treasury, 70/30 split of the rest, refund to the
 	// client; freelancer and client still hold 0 NEAR.
-	f0, mem0 := shares(m0, 3000)
-	f1, mem1 := shares(m1, 3000)
 	for acct, want := range map[string]*big.Int{
 		f.id:       new(big.Int).Add(f0, f1),
 		memberID:   new(big.Int).Add(mem0, mem1),
@@ -790,6 +845,73 @@ func (w *world) clientCreates(t *testing.T) {
 		if b := w.s.nearBalance(t, a); b.Sign() != 0 {
 			t.Errorf("%s holds %s yoctoNEAR, want 0", a, b)
 		}
+	}
+}
+
+// --- CSV export -------------------------------------------------------------
+
+// csvRow is an expected row of the CSV export, without its date.
+type csvRow struct {
+	milestone string
+	amount    *big.Int
+	recipient string
+	txHash    string
+	status    string
+}
+
+// exportCSV downloads GET /escrows/:id/export.csv and returns its rows
+// without the header, checking that the file is RFC 4180 CSV.
+func (w *world) exportCSV(t *testing.T, id string, auth ...string) [][]string {
+	t.Helper()
+	res := w.app.do(t, http.MethodGet, "/escrows/"+id+"/export.csv", nil, auth...)
+	if res.status != http.StatusOK {
+		t.Fatalf("export: status %d: %s", res.status, res.body)
+	}
+	if ct := res.header.Get("Content-Type"); ct != "text/csv; charset=utf-8" {
+		t.Fatalf("export Content-Type %q", ct)
+	}
+	if !bytes.HasSuffix(res.body, []byte("\r\n")) || bytes.Count(res.body, []byte("\n")) != bytes.Count(res.body, []byte("\r\n")) {
+		t.Fatalf("export line ends are not CRLF: %q", res.body)
+	}
+	r := csv.NewReader(bytes.NewReader(res.body))
+	r.FieldsPerRecord = 7
+	records, err := r.ReadAll()
+	if err != nil {
+		t.Fatalf("export is not valid CSV: %v\n%s", err, res.body)
+	}
+	if want := []string{"date", "escrow", "milestone", "USDC amount", "recipient", "tx hash", "status"}; !slices.Equal(records[0], want) {
+		t.Fatalf("export header %q", records[0])
+	}
+	return records[1:]
+}
+
+// checkCSV compares the rows of the export with want. Rows follow the
+// transactions that paid them, as want lists them; the payouts of one
+// transaction may come in any order. The date is a recent UTC time; the
+// amount is decimal USDC.
+func (w *world) checkCSV(t *testing.T, rows [][]string, id string, want []csvRow) {
+	t.Helper()
+	if len(rows) != len(want) {
+		t.Fatalf("export has %d rows, want %d: %q", len(rows), len(want), rows)
+	}
+	var got, exp []string
+	for i, row := range rows {
+		at, err := time.Parse("2006-01-02 15:04:05", row[0])
+		if err != nil || time.Since(at) > time.Hour || time.Until(at) > time.Minute {
+			t.Errorf("row %d date %q (%v)", i, row[0], err)
+		}
+		x := want[i]
+		if row[5] != x.txHash {
+			t.Errorf("row %d is paid by %q, want %q: %q", i, row[5], x.txHash, rows)
+		}
+		amount := new(big.Rat).SetFrac(x.amount, big.NewInt(1_000_000)).FloatString(6)
+		got = append(got, strings.Join(row[1:], " | "))
+		exp = append(exp, strings.Join([]string{id, x.milestone, amount, x.recipient, x.txHash, x.status}, " | "))
+	}
+	slices.Sort(got)
+	slices.Sort(exp)
+	if !slices.Equal(got, exp) {
+		t.Errorf("export rows:\n got %q\nwant %q", got, exp)
 	}
 }
 

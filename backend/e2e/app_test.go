@@ -176,9 +176,10 @@ func startApp(t *testing.T, env map[string]string, keys appKeys) *app {
 	return a
 }
 
-// response is an HTTP response with its decoded JSON body.
+// response is an HTTP response with its body.
 type response struct {
 	status int
+	header http.Header
 	body   []byte
 }
 
@@ -215,7 +216,7 @@ func (a *app) do(t *testing.T, method, path string, body any, headers ...string)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return response{status: resp.StatusCode, body: b}
+	return response{status: resp.StatusCode, header: resp.Header, body: b}
 }
 
 // must sends a request and fails unless it returns want.
