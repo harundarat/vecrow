@@ -1,75 +1,72 @@
 "use client"
 
-import { FileText, Wallet } from "lucide-react"
+import Link from "next/link"
+import { FileText, Lock } from "lucide-react"
+import { buttonVariants } from "@/components/ui/button"
 import { useAuth } from "@/context/auth"
-import type { WalletScheme } from "@/lib/api/auth"
-import { shortenAddress } from "@/lib/format"
-
-const SCHEME_LABEL: Record<WalletScheme, string> = {
-  eip191: "EVM",
-  ed25519: "Solana",
-  nep413: "NEAR",
-}
 
 export function AppHome() {
-  const { account } = useAuth()
+  const { account, recovery } = useAuth()
   if (!account) return null
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-8">
       <div>
-        <h1 className="text-2xl font-medium">Welcome, {account.username}</h1>
+        <h1 className="text-2xl font-medium">Escrows</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Your escrows and the ones you are invited to will show up here.
+          Welcome, {account.username}. Your escrows and the ones you are invited
+          to will show up here.
         </p>
       </div>
 
-      <section
-        aria-labelledby="escrows-heading"
-        className="flex flex-col gap-3"
-      >
-        <h2 id="escrows-heading" className="text-lg font-medium">
-          Escrows
-        </h2>
-        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed bg-card/40 px-4 py-12 text-center">
-          <span className="flex size-12 items-center justify-center rounded-full bg-primary/15 text-primary">
-            <FileText aria-hidden className="size-6" />
-          </span>
-          <div>
-            <p className="font-semibold">No escrows yet</p>
-            <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-              Creating and joining escrows is coming soon.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section
-        aria-labelledby="wallets-heading"
-        className="flex flex-col gap-3"
-      >
-        <h2 id="wallets-heading" className="text-lg font-medium">
-          Linked wallets
-        </h2>
-        <ul className="flex flex-col divide-y rounded-2xl bg-card">
-          {account.wallets.map((wallet) => (
-            <li key={wallet.id} className="flex items-center gap-3 p-4">
-              <Wallet aria-hidden className="size-5 shrink-0 text-primary" />
-              <span className="min-w-0 flex-1">
-                <span
-                  className="block truncate font-mono text-sm"
-                  title={wallet.address}
-                >
-                  {shortenAddress(wallet.address)}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {SCHEME_LABEL[wallet.scheme] ?? wallet.scheme}
-                </span>
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {recovery ? (
+        <EmptyState
+          icon={<Lock aria-hidden className="size-6" />}
+          title="Escrows need a wallet sign-in"
+          description="A recovery session cannot open or create escrows. Link a wallet you control, then sign in with it."
+          action={
+            <Link
+              href="/app/settings#wallets"
+              className={buttonVariants({ size: "sm" })}
+            >
+              Link a wallet
+            </Link>
+          }
+        />
+      ) : (
+        <EmptyState
+          icon={<FileText aria-hidden className="size-6" />}
+          title="No escrows yet"
+          description="Creating and joining escrows is coming soon."
+        />
+      )}
     </main>
+  )
+}
+
+function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+}: {
+  icon: React.ReactNode
+  title: string
+  description: string
+  action?: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed bg-card/40 px-4 py-12 text-center">
+      <span className="flex size-12 items-center justify-center rounded-full bg-primary/15 text-primary">
+        {icon}
+      </span>
+      <div>
+        <p className="font-semibold">{title}</p>
+        <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+          {description}
+        </p>
+      </div>
+      {action}
+    </div>
   )
 }
