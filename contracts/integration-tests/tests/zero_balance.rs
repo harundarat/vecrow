@@ -1,15 +1,3 @@
-//! R-20 / goal 4 of the spec: the freelancer, the client and the team member
-//! complete the whole flow with a NEAR balance of 0.
-//!
-//! - Both parties sign the escrow terms with their wallets, and the relayer
-//!   puts them on-chain.
-//! - The freelancer signs NEP-366 delegate actions; a relayer pays the gas,
-//!   and the contract still sees the freelancer as the predecessor.
-//! - The client never sends a NEAR transaction: they sign the terms and the
-//!   approval with their wallet, and the relayer forwards them.
-//! - The backend pays `storage_deposit` for every account that receives
-//!   USDC; the contract pays the 1 yoctoNEAR of each `ft_transfer`.
-
 mod common;
 
 use common::*;
@@ -24,7 +12,6 @@ async fn full_flow_with_zero_near_users() -> anyhow::Result<()> {
         root.create_subaccount(name)
             .initial_balance(NearToken::from_near(0))
     };
-    // Each NEAR wallet holds the key it signs NEP-413 messages with.
     let freelancer_key = wallet_fixtures::NearWallet::new("zfreelancer", 40);
     let freelancer = zero("zfreelancer")
         .keys(freelancer_key.secret_key().parse::<SecretKey>()?)
@@ -46,8 +33,6 @@ async fn full_flow_with_zero_near_users() -> anyhow::Result<()> {
             account.view_account().await?.balance,
             NearToken::from_near(0)
         );
-        // The backend registers every account that will receive USDC before
-        // the escrow goes on-chain.
         env.register(account.id()).await?;
     }
 
@@ -62,8 +47,6 @@ async fn full_flow_with_zero_near_users() -> anyhow::Result<()> {
         )
     };
 
-    // Both parties sign the terms with their NEAR wallets; the relayer puts
-    // them on-chain. The client's own account receives refunds.
     let terms = Terms {
         escrow_id: env.next_escrow_id(),
         freelancer: freelancer.id().clone(),
@@ -86,13 +69,9 @@ async fn full_flow_with_zero_near_users() -> anyhow::Result<()> {
         freelancer.id().as_str()
     );
 
-    // A solver (here the default client account) delivers USDC with
-    // ft_transfer_call, as 1Click does.
     env.mint(env.client.id(), usdc(1_500)).await?;
     assert_eq!(env.fund(id, usdc(1_500)).await?, usdc(1_500));
 
-    // The relayer cannot submit on its own; the freelancer's meta
-    // transaction can.
     assert_failure(env.submit(id, 0).await?, "only the freelancer");
     meta(
         "submit_milestone",

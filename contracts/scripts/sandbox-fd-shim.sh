@@ -1,11 +1,6 @@
 #!/bin/sh
 # Usage: sandbox-fd-shim.sh <nearcore sandbox version> <output dir>
-#
-# Prints the path of a near-sandbox wrapper for environments whose hard
-# open-file limit is below the 65,535 that nearcore requires. The wrapper runs
-# the sandbox binary with fd-limit-shim.so preloaded; point
-# NEAR_SANDBOX_BIN_PATH at it. `make test-sandbox` does this automatically
-# when `ulimit -H -n` is too low on Linux.
+# Prints the path of a near-sandbox wrapper that preloads fd-limit-shim.so.
 set -eu
 
 version="$1"

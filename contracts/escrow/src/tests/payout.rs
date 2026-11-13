@@ -1,7 +1,3 @@
-//! R-20: the `on_payout` callback records failed transfers as pending.
-//! That only the contract itself may call it (`#[private]`, enforced by the
-//! generated wasm entry point) is checked in the sandbox tests.
-
 use super::*;
 
 #[test]

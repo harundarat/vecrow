@@ -1,5 +1,3 @@
-//! R-18: refund unsubmitted milestones to the client's refund account.
-
 use super::*;
 
 #[test]
@@ -8,7 +6,6 @@ fn freelancer_refunds_one_pending_milestone_without_fee() {
     let id = funded_escrow(&mut contract, &Wallet::near());
     refund(&mut contract, FREELANCER, &id, Some(1));
 
-    // The whole milestone goes to the refund account; no fee is charged.
     assert_eq!(ft_transfers(), vec![(REFUND.to_string(), usdc(500))]);
     let escrow = view(&contract, &id);
     assert_eq!(escrow.milestones[1].status, MilestoneStatus::Refunded);

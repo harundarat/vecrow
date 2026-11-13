@@ -1,7 +1,3 @@
-//! R-06 and R-19 on a sandbox node: signed approvals forwarded by the
-//! relayer, paid out with ft_transfer + on_payout; R-20 pending payouts for
-//! an unregistered recipient.
-
 mod common;
 
 use common::*;
@@ -29,7 +25,6 @@ async fn approval_from_each_wallet_pays_fee_and_split() -> anyhow::Result<()> {
         let result = env.approve(&id, 0, wallet, 10 + i as u8).await?;
         assert!(result.is_success(), "{:?}", result.into_result());
 
-        // 1,000 USDC at 0.5% with a 70/30 split: 5, 696.5 and 298.5.
         let after = env.balances(&accounts).await?;
         assert_eq!(after[0] - before[0], usdc(5));
         assert_eq!(after[1] - before[1], 696_500_000);
@@ -109,8 +104,6 @@ async fn transfer_to_unregistered_recipient_is_kept_as_pending() -> anyhow::Resu
     env.submit(&id, 0).await?.into_result()?;
     env.approve(&id, 0, &wallet, 1).await?.into_result()?;
 
-    // The registered accounts are paid; the unregistered share stays in the
-    // contract as a pending payout instead of being lost.
     assert_eq!(env.balance(env.treasury.id()).await?, usdc(5));
     assert_eq!(env.balance(env.freelancer.id()).await?, 696_500_000);
     assert_eq!(env.balance(env.escrow.id()).await?, 298_500_000);
@@ -140,10 +133,6 @@ async fn on_payout_is_private() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn largest_split_is_paid_within_the_gas_limit() -> anyhow::Result<()> {
-    // 10 recipients plus the fee is the most payouts one release can make;
-    // EIP-191 (ecrecover) is the most expensive signature to verify. Both
-    // approval and auto-release must fit in one 300 TGas call, or the
-    // milestone could never be released.
     let env = setup().await?;
     let mut recipients = Vec::new();
     for i in 0..10 {

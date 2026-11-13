@@ -1,5 +1,3 @@
-//! R-07 on a sandbox node, with a review window shortened at deploy time.
-
 mod common;
 
 use common::*;
@@ -7,7 +5,6 @@ use serde_json::json;
 
 const DEMO_WINDOW_SEC: u64 = 5;
 
-/// Produces blocks until the block time reaches `target_ms`.
 async fn wait_until(env: &Env, target_ms: u64) -> anyhow::Result<()> {
     for _ in 0..120 {
         if env.now_ms().await? > target_ms {
@@ -78,7 +75,6 @@ async fn revision_stops_the_timer_until_resubmission() -> anyhow::Result<()> {
         "a milestone awaiting revision cannot be auto-released",
     );
 
-    // The window restarts at re-submission.
     env.submit(&id, 0).await?.into_result()?;
     let resubmitted_at = env.get_escrow(&id).await?["milestones"][0]["submitted_at_ms"]
         .as_u64()

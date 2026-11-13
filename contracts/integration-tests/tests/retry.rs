@@ -1,6 +1,3 @@
-//! R-20 on a sandbox node: transfers to accounts that are not registered on
-//! the token are kept as pending and re-sent by `retry_payout` exactly once.
-
 mod common;
 
 use common::*;
@@ -33,14 +30,11 @@ async fn pending_payout_is_retried_after_registration() -> anyhow::Result<()> {
         )
     };
 
-    // Still unregistered: the transfer fails again and the amount is
-    // restored, unchanged.
     let paid: bool = retry(&env.relayer).await?.into_result()?.json()?;
     assert!(!paid);
     assert_eq!(env.get_escrow(&id).await?["pending_payouts"], pending);
     assert_eq!(env.balance(env.escrow.id()).await?, 298_500_000);
 
-    // The backend registers the account; the retry sends the exact amount.
     env.register(newcomer.id()).await?;
     let paid: bool = retry(&env.relayer).await?.into_result()?.json()?;
     assert!(paid);
@@ -59,7 +53,6 @@ async fn pending_payout_is_retried_after_registration() -> anyhow::Result<()> {
 #[tokio::test]
 async fn concurrent_retries_pay_once() -> anyhow::Result<()> {
     let env = setup().await?;
-    // The refund account was not registered before the escrow went on-chain.
     let refundee = env.new_account("refundee", 1).await?;
     let mut terms = env.default_terms().await?;
     terms.refund_account = refundee.id().clone();
@@ -80,7 +73,6 @@ async fn concurrent_retries_pay_once() -> anyhow::Result<()> {
     );
     env.register(refundee.id()).await?;
 
-    // Two retries in flight at the same time, from different signers.
     let send = |caller: &near_workspaces::Account| {
         caller
             .call(env.escrow.id(), "retry_payout")

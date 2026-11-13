@@ -1,7 +1,3 @@
-//! Unit tests for the contract logic, run against near-sdk's mocked
-//! blockchain. Cross-contract flows (token transfers and callbacks) are
-//! covered by the sandbox tests in `integration-tests/`.
-
 mod approve;
 mod auto_release;
 mod cancel;
@@ -33,24 +29,18 @@ pub const RELAYER: &str = "relayer.test.near";
 pub const CLIENT: &str = "client.test.near";
 pub const REFUND: &str = "refund.test.near";
 
-/// 2023-11-14T22:13:20Z: a realistic block time for the tests.
 pub const T0_MS: u64 = 1_700_000_000_000;
-/// The production fee: 0.5%.
 pub const FEE_BPS: u16 = 50;
-/// The production review window: 14 days.
 pub const WINDOW_SEC: u64 = 14 * 24 * 60 * 60;
 
 pub fn account(id: &str) -> AccountId {
     id.parse().unwrap()
 }
 
-/// USDC amount in base units (6 decimals).
 pub fn usdc(whole: u128) -> u128 {
     whole * 1_000_000
 }
 
-/// Sets the mocked context: `predecessor` calls the contract at `now_ms`,
-/// with no attached deposit, as every user-facing call must allow.
 pub fn set_context(predecessor: &str, now_ms: u64) {
     testing_env!(
         VMContextBuilder::new()
@@ -63,8 +53,6 @@ pub fn set_context(predecessor: &str, now_ms: u64) {
     );
 }
 
-/// Deploys a fresh contract: empty storage, then `new` with the production
-/// fee and review window.
 pub fn new_contract() -> VecrowEscrow {
     near_sdk::env::set_blockchain_interface(near_sdk::MockedBlockchain::new(
         VMContextBuilder::new()
@@ -88,18 +76,14 @@ pub fn share(id: &str, bps: u16) -> SplitShare {
     }
 }
 
-/// The default split used by most tests: 70/30 between the freelancer and a
-/// team member.
 pub fn split_70_30() -> Vec<SplitShare> {
     vec![share(FREELANCER, 7_000), share(MEMBER, 3_000)]
 }
 
-/// The freelancer's NEAR wallet, which signs the terms with NEP-413.
 pub fn freelancer_wallet() -> NearWallet {
     NearWallet::new(FREELANCER, 5)
 }
 
-/// The first unused escrow ID of the form `e{n}`.
 pub fn next_escrow_id(contract: &VecrowEscrow) -> String {
     (1..)
         .map(|n| format!("e{n}"))
@@ -107,9 +91,6 @@ pub fn next_escrow_id(contract: &VecrowEscrow) -> String {
         .unwrap()
 }
 
-/// The default terms: 1,000 and 500 USDC milestones, the 70/30 split,
-/// `wallet` as approver, `REFUND` as refund account, the production fee and
-/// a deadline one hour after `T0_MS`.
 pub fn default_terms(escrow_id: &str, wallet: &Wallet) -> EscrowTerms {
     EscrowTerms {
         escrow_id: escrow_id.to_string(),
@@ -123,15 +104,12 @@ pub fn default_terms(escrow_id: &str, wallet: &Wallet) -> EscrowTerms {
     }
 }
 
-/// Arguments of `create_escrow`.
 pub struct SignedTerms {
     pub terms: EscrowTerms,
     pub freelancer_signature: FreelancerSignature,
     pub client_signature: String,
 }
 
-/// The signed message of `terms`, built by the wallet fixtures (independently
-/// of the contract), with `approver` as the `{scheme}:{address}` label.
 pub fn terms_message(terms: &EscrowTerms, approver: &str) -> String {
     wallet_fixtures::terms_message(&wallet_fixtures::Terms {
         contract_id: CONTRACT.to_string(),
@@ -150,8 +128,6 @@ pub fn terms_message(terms: &EscrowTerms, approver: &str) -> String {
     })
 }
 
-/// Both parties sign `terms`: the freelancer's NEAR wallet with NEP-413 and
-/// the client's approver `wallet` in its own scheme.
 pub fn sign_terms(terms: EscrowTerms, freelancer: &NearWallet, client: &Wallet) -> SignedTerms {
     let message = terms_message(&terms, &client.label());
     let nonce = wallet_fixtures::terms_nonce(&message);
@@ -165,7 +141,6 @@ pub fn sign_terms(terms: EscrowTerms, freelancer: &NearWallet, client: &Wallet) 
     }
 }
 
-/// The relayer calls `create_escrow` at `T0_MS`.
 pub fn create_with(contract: &mut VecrowEscrow, signed: SignedTerms) {
     set_context(RELAYER, T0_MS);
     contract.create_escrow(
@@ -175,8 +150,6 @@ pub fn create_with(contract: &mut VecrowEscrow, signed: SignedTerms) {
     );
 }
 
-/// Puts the default terms on-chain with `wallet` as the approver; returns
-/// the escrow ID.
 pub fn create_escrow_with(contract: &mut VecrowEscrow, wallet: &Wallet) -> String {
     let id = next_escrow_id(contract);
     create_with(
@@ -186,7 +159,6 @@ pub fn create_escrow_with(contract: &mut VecrowEscrow, wallet: &Wallet) -> Strin
     id
 }
 
-/// Puts the default terms on-chain with a NEAR wallet as the approver.
 pub fn create_default(contract: &mut VecrowEscrow) -> String {
     create_escrow_with(contract, &Wallet::near())
 }
@@ -197,7 +169,6 @@ pub fn view(contract: &VecrowEscrow, escrow_id: &str) -> EscrowView {
         .expect("escrow exists")
 }
 
-/// A client wallet of one of the three supported schemes.
 pub enum Wallet {
     Near(NearWallet),
     Evm(EvmWallet),
@@ -221,7 +192,6 @@ impl Wallet {
         [Self::near(), Self::evm(), Self::solana()]
     }
 
-    /// The `approver` field of the terms.
     pub fn approver(&self) -> Approver {
         match self {
             Self::Near(w) => Approver::Nep413 {
@@ -237,7 +207,6 @@ impl Wallet {
         }
     }
 
-    /// `{scheme}:{address}` as written on the `Approver:` line of the terms.
     pub fn label(&self) -> String {
         match self {
             Self::Near(w) => w.approver_label(),
@@ -246,8 +215,6 @@ impl Wallet {
         }
     }
 
-    /// Signs `message` the way the wallet does; NEP-413 uses the contract as
-    /// the recipient.
     pub fn sign(&self, message: &str, nonce: &[u8; 32]) -> String {
         match self {
             Self::Near(w) => w.sign_message(message, nonce, CONTRACT),
@@ -257,11 +224,8 @@ impl Wallet {
     }
 }
 
-/// A deadline one hour after `T0_MS`.
 pub const DEADLINE_MS: u64 = T0_MS + 3_600_000;
 
-/// The token contract calls `ft_on_transfer` for `sender` and `amount`;
-/// returns the amount the token gives back to the sender.
 pub fn transfer_call_from(
     contract: &mut VecrowEscrow,
     token: &str,
@@ -276,26 +240,21 @@ pub fn transfer_call_from(
     }
 }
 
-/// The client funds `escrow_id` with `amount` USDC base units.
 pub fn fund(contract: &mut VecrowEscrow, escrow_id: &str, amount: u128) -> u128 {
     transfer_call_from(contract, USDC, CLIENT, amount, escrow_id)
 }
 
-/// Puts the default terms on-chain with `wallet` as the approver and funds
-/// the escrow with exactly the total.
 pub fn funded_escrow(contract: &mut VecrowEscrow, wallet: &Wallet) -> String {
     let id = create_escrow_with(contract, wallet);
     assert_eq!(fund(contract, &id, usdc(1_500)), 0);
     id
 }
 
-/// The freelancer submits `milestone` at `now_ms`.
 pub fn submit(contract: &mut VecrowEscrow, escrow_id: &str, milestone: u32, now_ms: u64) {
     set_context(FREELANCER, now_ms);
     contract.submit_milestone(escrow_id.to_string(), milestone);
 }
 
-/// A milestone action signed by `wallet`: `(nonce hex, signature)`.
 pub fn sign_milestone(
     wallet: &Wallet,
     action: &str,
@@ -319,7 +278,6 @@ pub fn sign_milestone(
     )
 }
 
-/// The relayer forwards an approval of `milestone` signed by `wallet`.
 pub fn approve(
     contract: &mut VecrowEscrow,
     escrow_id: &str,
@@ -346,7 +304,6 @@ pub fn approve(
     );
 }
 
-/// A function call scheduled by the contract in the current mocked call.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Call {
     pub receiver: String,
@@ -355,7 +312,6 @@ pub struct Call {
     pub deposit: NearToken,
 }
 
-/// Function calls scheduled by the last contract call.
 pub fn scheduled_calls() -> Vec<Call> {
     near_sdk::test_utils::get_created_receipts()
         .into_iter()
@@ -382,9 +338,6 @@ pub fn scheduled_calls() -> Vec<Call> {
         .collect()
 }
 
-/// `(receiver, amount)` of each `ft_transfer` scheduled by the last call, in
-/// order. Asserts that each attaches exactly 1 yoctoNEAR and is followed by
-/// an `on_payout` callback for the same receiver and amount.
 pub fn ft_transfers() -> Vec<(String, u128)> {
     let calls = scheduled_calls();
     let transfers: Vec<_> = calls.iter().filter(|c| c.method == "ft_transfer").collect();
@@ -412,8 +365,6 @@ pub fn ft_transfers() -> Vec<(String, u128)> {
         .collect()
 }
 
-/// Runs the `on_payout` callback as the contract itself, with the given
-/// result of the `ft_transfer`.
 pub fn payout_callback(
     contract: &mut VecrowEscrow,
     escrow_id: &str,
@@ -440,8 +391,6 @@ pub fn payout_callback(
     contract.on_payout(escrow_id.to_string(), account(account_id), U128(amount))
 }
 
-/// The relayer forwards a revision request for `milestone` signed by
-/// `wallet`.
 pub fn request_revision(
     contract: &mut VecrowEscrow,
     escrow_id: &str,
@@ -468,19 +417,16 @@ pub fn request_revision(
     );
 }
 
-/// Anyone (here a stranger) calls `auto_release` at `now_ms`.
 pub fn auto_release(contract: &mut VecrowEscrow, escrow_id: &str, milestone: u32, now_ms: u64) {
     set_context(STRANGER, now_ms);
     contract.auto_release(escrow_id.to_string(), milestone);
 }
 
-/// `caller` calls `refund_unsubmitted`.
 pub fn refund(contract: &mut VecrowEscrow, caller: &str, escrow_id: &str, milestone: Option<u32>) {
     set_context(caller, T0_MS);
     contract.refund_unsubmitted(escrow_id.to_string(), milestone);
 }
 
-/// A cancellation signed by `wallet`: `(nonce hex, signature)`.
 pub fn sign_cancel(
     wallet: &Wallet,
     escrow_id: &str,
@@ -495,7 +441,6 @@ pub fn sign_cancel(
     )
 }
 
-/// `caller` forwards a cancellation of `escrow_id` signed by `wallet`.
 pub fn cancel_signed(
     contract: &mut VecrowEscrow,
     caller: &str,

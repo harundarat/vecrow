@@ -1,6 +1,3 @@
-//! Milestone lifecycle: submit (R-05), signed approval (R-06), revision
-//! requests (R-17) and auto-release (R-07).
-
 use crate::events::VecrowEvent;
 use crate::payout::ReleaseTrigger;
 use crate::signature::{Action, action_message, parse_nonce};
@@ -8,9 +5,6 @@ use crate::*;
 
 #[near]
 impl VecrowEscrow {
-    /// Submits a milestone (0-based index) for review. Only the freelancer,
-    /// only on a `Funded` escrow, and only from `Pending` or
-    /// `RevisionRequested`. Each submission starts a new review window.
     pub fn submit_milestone(&mut self, escrow_id: String, milestone: u32) {
         let mut escrow = self.load_escrow(&escrow_id);
         require_freelancer(&escrow);
@@ -38,11 +32,6 @@ impl VecrowEscrow {
 
 #[near]
 impl VecrowEscrow {
-    /// Approves a `Submitted` milestone with a payload signed by the
-    /// approver (R-06). Forwarded by the relayer; the caller gains no rights.
-    /// The milestone becomes `Released`: the fee goes to the treasury and
-    /// the rest to the split recipients. Attach 300 TGas so every payout and
-    /// its callback have gas.
     pub fn approve_milestone(
         &mut self,
         escrow_id: String,
@@ -65,11 +54,6 @@ impl VecrowEscrow {
         self.save_escrow(&escrow_id, escrow);
     }
 
-    /// Sends a `Submitted` milestone back for revision with a payload signed
-    /// by the approver (R-17), at most `MAX_REVISIONS` (2) times per
-    /// milestone. The milestone becomes `RevisionRequested` and the
-    /// auto-release timer stops until the freelancer submits again. The
-    /// reason is stored by the backend, not on chain.
     pub fn request_revision(
         &mut self,
         escrow_id: String,
@@ -111,11 +95,6 @@ impl VecrowEscrow {
         .emit();
     }
 
-    /// Releases a `Submitted` milestone once the escrow's review window has
-    /// passed since its latest submission (R-07, D-03). Anyone may call it;
-    /// the backend runs it as a job. Rejected while the milestone is
-    /// `RevisionRequested`, since a revision request stops the timer. Pays out
-    /// like an approval; attach 300 TGas.
     pub fn auto_release(&mut self, escrow_id: String, milestone: u32) {
         let mut escrow = self.load_escrow(&escrow_id);
         require_funded(&escrow);
@@ -149,8 +128,6 @@ impl VecrowEscrow {
 }
 
 impl VecrowEscrow {
-    /// Checks a signed milestone action: a `Funded` escrow, a `Submitted`
-    /// milestone, and a valid, unexpired, unused signature by the approver.
     #[allow(clippy::too_many_arguments)]
     fn accept_milestone_action(
         &mut self,
@@ -192,7 +169,6 @@ fn require_funded(escrow: &Escrow) {
     );
 }
 
-/// The milestone at `index`, or a panic.
 fn milestone_mut(escrow: &mut Escrow, index: u32) -> &mut Milestone {
     escrow
         .milestones

@@ -1,6 +1,3 @@
-//! R-02 on a sandbox node: real `ft_transfer_call` funding, with NEP-141
-//! refunds of rejected or excess amounts to `sender_id`.
-
 mod common;
 
 use common::*;
@@ -11,21 +8,18 @@ async fn exact_below_and_above_total() -> anyhow::Result<()> {
     let env = setup().await?;
     env.mint(env.client.id(), usdc(10_000)).await?;
 
-    // Below the total: returned in full, status unchanged.
     let id = env.create_escrow_for(&Wallet::evm()).await?;
     assert_eq!(env.fund(&id, usdc(1_499)).await?, 0);
     assert_eq!(env.status(&id).await?, "Created");
     assert_eq!(env.balance(env.client.id()).await?, usdc(10_000));
     assert_eq!(env.balance(env.escrow.id()).await?, 0);
 
-    // Exactly the total.
     assert_eq!(env.fund(&id, usdc(1_500)).await?, usdc(1_500));
     let escrow = env.get_escrow(&id).await?;
     assert_eq!(escrow["status"], "Funded");
     assert_eq!(escrow["balance"], usdc(1_500).to_string());
     assert_eq!(env.balance(env.escrow.id()).await?, usdc(1_500));
 
-    // Above the total: funded with exactly the total, excess returned.
     let above = env.create_escrow_for(&Wallet::solana()).await?;
     assert_eq!(env.fund(&above, usdc(2_000)).await?, usdc(1_500));
     let escrow = env.get_escrow(&above).await?;
@@ -41,24 +35,20 @@ async fn transfers_to_escrows_not_awaiting_funds_are_returned() -> anyhow::Resul
     let env = setup().await?;
     env.mint(env.client.id(), usdc(10_000)).await?;
 
-    // Funded: a second transfer is returned.
     let funded = env.create_escrow_for(&Wallet::evm()).await?;
     assert_eq!(env.fund(&funded, usdc(1_500)).await?, usdc(1_500));
     assert_eq!(env.fund(&funded, usdc(1_500)).await?, 0);
 
-    // Cancelled.
     let cancelled = env.create_escrow_for(&Wallet::solana()).await?;
     env.call(&env.freelancer, "cancel", json!({ "escrow_id": cancelled }))
         .await?
         .into_result()?;
     assert_eq!(env.fund(&cancelled, usdc(1_500)).await?, 0);
 
-    // Unknown escrow IDs, including one the backend has not put on-chain.
     let not_on_chain = env.next_escrow_id();
     assert_eq!(env.fund(&not_on_chain, usdc(1_500)).await?, 0);
     assert_eq!(env.fund("Not An ID", usdc(1_500)).await?, 0);
 
-    // Only the one accepted transfer stayed in the contract.
     assert_eq!(env.balance(env.escrow.id()).await?, usdc(1_500));
     assert_eq!(env.balance(env.client.id()).await?, usdc(8_500));
     Ok(())

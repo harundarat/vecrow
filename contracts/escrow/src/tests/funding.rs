@@ -1,6 +1,3 @@
-//! R-02: funding and amount rules in `ft_on_transfer`, and the R-01 rule that
-//! a funded escrow cannot be cancelled.
-
 use super::*;
 
 #[test]
@@ -91,7 +88,6 @@ fn other_token_is_returned() {
 
 #[test]
 fn unknown_escrow_id_is_returned() {
-    // Includes an escrow the backend proposed but has not put on-chain yet.
     let mut contract = new_contract();
     create_default(&mut contract);
     for msg in ["e2", "E1", "", "e1 ", "{\"escrow_id\":\"e1\"}"] {

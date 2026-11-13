@@ -1,5 +1,3 @@
-//! R-05: submit a milestone.
-
 use super::*;
 
 #[test]

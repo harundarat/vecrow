@@ -1,5 +1,3 @@
-//! R-17 (request a revision) and the R-05 re-submission rule.
-
 use super::*;
 
 fn submitted(contract: &mut VecrowEscrow, wallet: &Wallet) -> String {
@@ -64,7 +62,6 @@ fn revision_limit_is_per_milestone_and_approval_still_works() {
         request_revision(&mut contract, &id, 0, &wallet, nonce, T0_MS);
         submit(&mut contract, &id, 0, T0_MS);
     }
-    // Milestone 1 still has its own two revisions.
     submit(&mut contract, &id, 1, T0_MS);
     request_revision(&mut contract, &id, 1, &wallet, 3, T0_MS);
     assert_eq!(view(&contract, &id).milestones[1].revision_count, 1);

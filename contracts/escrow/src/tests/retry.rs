@@ -1,8 +1,5 @@
-//! R-20: `retry_payout` re-sends a pending payout exactly once.
-
 use super::*;
 
-/// A funded escrow whose 298.5 USDC payout to the member failed.
 fn escrow_with_pending_payout(contract: &mut VecrowEscrow) -> String {
     let wallet = Wallet::near();
     let id = funded_escrow(contract, &wallet);
@@ -28,7 +25,6 @@ fn retry_sends_the_exact_pending_amount_and_clears_it_first() {
     assert_eq!(ft_transfers(), vec![(MEMBER.to_string(), 298_500_000)]);
     assert!(view(&contract, &id).pending_payouts.is_empty());
 
-    // The transfer succeeds: nothing is pending.
     assert!(payout_callback(
         &mut contract,
         &id,
@@ -45,7 +41,6 @@ fn second_retry_in_a_row_cannot_pay_twice() {
     let mut contract = new_contract();
     let id = escrow_with_pending_payout(&mut contract);
     retry(&mut contract, &id, MEMBER);
-    // The first transfer is still in flight; its amount is no longer pending.
     retry(&mut contract, &id, MEMBER);
 }
 

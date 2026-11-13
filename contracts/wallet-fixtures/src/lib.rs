@@ -1,58 +1,32 @@
-//! Test-only wallet signers for the Vecrow contract tests.
-//!
-//! Each signer reproduces, byte for byte, what the corresponding wallet signs
-//! and returns, using only standard libraries (`ed25519-dalek`, `k256`,
-//! `borsh`, `sha2`, `sha3`). None of this code is shared with the contract, so
-//! a fixture that verifies proves the contract accepts real wallet output:
-//!
-//! | Wallet | Call | Signed bytes | Returned signature |
-//! | --- | --- | --- | --- |
-//! | NEAR (NEP-413) | `signMessage({message, nonce, recipient})` | `sha256(borsh(tag) ‖ borsh(payload))` | base64, 64 bytes |
-//! | MetaMask (EIP-191) | `personal_sign(message)` | `keccak256("\x19Ethereum Signed Message:\n" ‖ len ‖ message)` | `0x` hex, 65 bytes `r‖s‖v`, `v` = 27/28 |
-//! | Phantom (Solana) | `signMessage(utf8 bytes)` | raw message bytes | base58, 64 bytes |
-//!
-//! The message builders below follow the Vecrow signed-payload format in
-//! `docs/architecture.md` §5.3 (escrow terms and approver actions) and are
-//! written independently of the contract's own builders.
-
 use base64::Engine;
 use borsh::BorshSerialize;
 use ed25519_dalek::{Signer, SigningKey};
 use sha2::{Digest, Sha256};
 use sha3::Keccak256;
 
-/// NEP-413 tag: 2^31 + 413, Borsh-serialised as a little-endian `u32` before
-/// the payload so a signed message can never be a valid transaction.
 pub const NEP413_TAG: u32 = (1 << 31) + 413;
 
-/// Returns a 32-byte nonce filled with `byte`.
 pub fn nonce(byte: u8) -> [u8; 32] {
     [byte; 32]
 }
 
-/// Lowercase hex of a nonce, as passed to the contract and written in messages.
 pub fn nonce_hex(nonce: &[u8; 32]) -> String {
     hex::encode(nonce)
 }
 
-/// Escrow terms as both parties sign them for `create_escrow`.
 #[derive(Clone, Debug)]
 pub struct Terms {
     pub contract_id: String,
     pub escrow_id: String,
     pub freelancer: String,
-    /// Milestone amounts in USDC base units.
     pub milestones: Vec<u128>,
-    /// `(account, bps)` in order.
     pub split: Vec<(String, u16)>,
-    /// `{scheme}:{address}`, e.g. `eip191:0xab…`.
     pub approver: String,
     pub refund_account: String,
     pub fee_bps: u16,
     pub deadline_ms: u64,
 }
 
-/// Message both parties sign for `create_escrow`.
 pub fn terms_message(t: &Terms) -> String {
     let milestones: Vec<String> = t.milestones.iter().map(u128::to_string).collect();
     let split: Vec<String> = t
@@ -74,12 +48,10 @@ pub fn terms_message(t: &Terms) -> String {
     )
 }
 
-/// The NEP-413 nonce used to sign terms: `sha256(message)`.
 pub fn terms_nonce(message: &str) -> [u8; 32] {
     Sha256::digest(message.as_bytes()).into()
 }
 
-/// Message the approver signs to cancel an unfunded escrow.
 pub fn cancel_message(
     contract_id: &str,
     escrow_id: &str,
@@ -92,8 +64,6 @@ pub fn cancel_message(
     )
 }
 
-/// Message signed for a milestone action: `approve_milestone` or
-/// `request_revision`.
 pub fn milestone_message(
     action: &str,
     contract_id: &str,
@@ -108,7 +78,6 @@ pub fn milestone_message(
     )
 }
 
-/// A NEAR wallet key that signs with NEP-413 `signMessage`.
 pub struct NearWallet {
     account_id: String,
     key: SigningKey,
@@ -123,7 +92,6 @@ struct Nep413Payload {
 }
 
 impl NearWallet {
-    /// A deterministic key derived from `seed`, owned by `account_id`.
     pub fn new(account_id: &str, seed: u8) -> Self {
         Self {
             account_id: account_id.to_string(),
@@ -135,7 +103,6 @@ impl NearWallet {
         &self.account_id
     }
 
-    /// The public key in NEAR format: `ed25519:<base58>`.
     pub fn public_key(&self) -> String {
         format!(
             "ed25519:{}",
@@ -143,26 +110,20 @@ impl NearWallet {
         )
     }
 
-    /// The secret key in NEAR format, `ed25519:<base58 of seed ‖ public key>`,
-    /// so a sandbox account can hold the same key.
     pub fn secret_key(&self) -> String {
         let mut bytes = self.key.to_bytes().to_vec();
         bytes.extend_from_slice(self.key.verifying_key().as_bytes());
         format!("ed25519:{}", bs58::encode(bytes).into_string())
     }
 
-    /// The implicit account ID of this key: lowercase hex of the public key.
     pub fn implicit_account_id(&self) -> String {
         hex::encode(self.key.verifying_key().as_bytes())
     }
 
-    /// `{scheme}:{address}` of this wallet as an approver.
     pub fn approver_label(&self) -> String {
         format!("nep413:{}", self.account_id)
     }
 
-    /// NEP-413 `signMessage({message, nonce, recipient})` without a
-    /// `callbackUrl`. Returns the base64 signature.
     pub fn sign_message(&self, message: &str, nonce: &[u8; 32], recipient: &str) -> String {
         let mut bytes = borsh::to_vec(&NEP413_TAG).expect("borsh u32");
         bytes.extend(
@@ -180,39 +141,31 @@ impl NearWallet {
     }
 }
 
-/// An EVM wallet key that signs with EIP-191 `personal_sign`, as MetaMask does.
 pub struct EvmWallet {
     key: k256::ecdsa::SigningKey,
 }
 
 impl EvmWallet {
-    /// A deterministic key derived from `seed` (must be non-zero).
     pub fn new(seed: u8) -> Self {
         Self::from_secret([seed; 32])
     }
 
-    /// A key from a raw 32-byte secret scalar.
     pub fn from_secret(secret: [u8; 32]) -> Self {
         Self {
             key: k256::ecdsa::SigningKey::from_bytes(&secret.into()).expect("valid scalar"),
         }
     }
 
-    /// The address: `0x` + lowercase hex of the last 20 bytes of
-    /// `keccak256(uncompressed public key without the 0x04 prefix)`.
     pub fn address(&self) -> String {
         let point = self.key.verifying_key().to_encoded_point(false);
         let hash = Keccak256::digest(&point.as_bytes()[1..]);
         format!("0x{}", hex::encode(&hash[12..]))
     }
 
-    /// `{scheme}:{address}` of this wallet as an approver.
     pub fn approver_label(&self) -> String {
         format!("eip191:{}", self.address())
     }
 
-    /// EIP-191 `personal_sign(message)`. Returns `0x` + hex of `r‖s‖v` with
-    /// `v` = 27 or 28, like MetaMask.
     pub fn personal_sign(&self, message: &str) -> String {
         let mut prefixed = format!("\x19Ethereum Signed Message:\n{}", message.len()).into_bytes();
         prefixed.extend_from_slice(message.as_bytes());
@@ -227,9 +180,6 @@ impl EvmWallet {
     }
 }
 
-/// Turns a low-s EIP-191 signature into its high-s twin (`s` → `n − s`,
-/// recovery bit flipped). Both recover the same address, but EIP-2 forbids
-/// high-s signatures and wallets never produce them.
 pub fn malleate_evm_signature(signature: &str) -> String {
     let bytes = hex::decode(signature.trim_start_matches("0x")).expect("hex signature");
     let sig = k256::ecdsa::Signature::from_slice(&bytes[..64]).expect("r and s");
@@ -241,36 +191,29 @@ pub fn malleate_evm_signature(signature: &str) -> String {
     format!("0x{}", hex::encode(out))
 }
 
-/// A Solana wallet key that signs raw message bytes, as Phantom's
-/// `signMessage` does.
 pub struct SolanaWallet {
     key: SigningKey,
 }
 
 impl SolanaWallet {
-    /// A deterministic key derived from `seed`.
     pub fn new(seed: u8) -> Self {
         Self {
             key: SigningKey::from_bytes(&[seed; 32]),
         }
     }
 
-    /// The address: base58 of the ed25519 public key.
     pub fn address(&self) -> String {
         bs58::encode(self.key.verifying_key().as_bytes()).into_string()
     }
 
-    /// The NEAR implicit account ID of the same key: lowercase hex.
     pub fn implicit_account_id(&self) -> String {
         hex::encode(self.key.verifying_key().as_bytes())
     }
 
-    /// `{scheme}:{address}` of this wallet as an approver.
     pub fn approver_label(&self) -> String {
         format!("ed25519:{}", self.address())
     }
 
-    /// `signMessage(utf8 bytes of message)`. Returns the base58 signature.
     pub fn sign_message(&self, message: &str) -> String {
         bs58::encode(self.key.sign(message.as_bytes()).to_bytes()).into_string()
     }
@@ -282,7 +225,6 @@ mod tests {
 
     #[test]
     fn evm_address_matches_known_vector() {
-        // Private key 1 is a well-known test vector.
         let mut secret = [0u8; 32];
         secret[31] = 1;
         assert_eq!(
@@ -308,7 +250,7 @@ mod tests {
     }
 
     #[test]
-    fn terms_follow_the_documented_format() {
+    fn terms_follow_the_expected_format() {
         let terms = Terms {
             contract_id: "escrow.near".into(),
             escrow_id: "e-1".into(),
@@ -327,7 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn messages_follow_the_documented_format() {
+    fn messages_follow_the_expected_format() {
         let n = nonce(0xab);
         assert_eq!(
             milestone_message(

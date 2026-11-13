@@ -1,5 +1,3 @@
-# Vecrow contracts — run `make help` for the list of targets.
-
 CARGO ?= cargo
 WASM_DIR := target/near
 CONTRACTS := vecrow-escrow mock-ft
@@ -36,9 +34,6 @@ test-unit: ## Unit tests (no sandbox)
 SANDBOX_VERSION := 2.14.0
 SANDBOX_SHIM_DIR := $(CURDIR)/target/sandbox-shim
 
-# nearcore raises its open-file limit to 65,535 at startup. Where the hard
-# limit is lower and cannot be raised (some containers), the sandbox runs
-# through scripts/sandbox-fd-shim.sh, unless NEAR_SANDBOX_BIN_PATH is set.
 .PHONY: test-sandbox
 test-sandbox: build ## near-workspaces sandbox tests (downloads the sandbox binary on first run)
 	@hard=$$(ulimit -H -n); \

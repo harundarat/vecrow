@@ -1,11 +1,3 @@
-//! Mock NEP-141 token used as a USDC stand-in in local and sandbox tests.
-//!
-//! It is the standard `near-contract-standards` fungible token (NEP-141 core,
-//! NEP-145 storage management, NEP-148 metadata) plus an open `mint` method.
-//! Like real USDC, an account must be registered with `storage_deposit` before
-//! it can receive tokens, so tests can exercise transfers to unregistered
-//! accounts. Never deploy it with real value.
-
 use near_contract_standards::fungible_token::metadata::{
     FT_METADATA_SPEC, FungibleTokenMetadata, FungibleTokenMetadataProvider,
 };
@@ -43,7 +35,7 @@ impl MockFt {
         }
     }
 
-    /// Mints `amount` to a registered account. Open to anyone: test token only.
+    // Open to anyone: test token only, never deploy with real value.
     pub fn mint(&mut self, account_id: AccountId, amount: U128) {
         self.token.internal_deposit(&account_id, amount.0);
     }

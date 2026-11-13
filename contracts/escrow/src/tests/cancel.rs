@@ -1,6 +1,3 @@
-//! R-01: cancel before funding, by the freelancer or with the approver's
-//! signature.
-
 use super::*;
 
 #[test]
@@ -47,8 +44,6 @@ fn cancellation_signed_by_another_wallet_is_rejected() {
 #[test]
 #[should_panic(expected = "invalid signature")]
 fn cancellation_signed_by_the_freelancer_key_is_rejected() {
-    // The freelancer cancels as the predecessor; a signature does not make
-    // anyone else the freelancer.
     let mut contract = new_contract();
     let id = create_escrow_with(&mut contract, &Wallet::near());
     let freelancer_key = Wallet::Near(freelancer_wallet());
@@ -108,7 +103,6 @@ fn approver_cannot_cancel_a_funded_escrow() {
 
 #[test]
 fn freelancer_can_still_cancel_with_unrelated_arguments() {
-    // A freelancer call does not need a signature; any given is ignored.
     let mut contract = new_contract();
     let id = create_default(&mut contract);
     set_context(FREELANCER, T0_MS);

@@ -1,11 +1,8 @@
-//! R-03 (revenue split) and R-19 (platform fee) arithmetic.
-
 use super::*;
 use crate::split::{ReleasePlan, mul_bps, release_plan};
 
 #[test]
 fn fee_and_70_30_split_of_1000_usdc() {
-    // R-19 acceptance: 5 to treasury, 696.5 and 298.5 to the recipients.
     let plan = release_plan(usdc(1_000), FEE_BPS, &split_70_30());
     assert_eq!(
         plan,
@@ -31,14 +28,13 @@ fn three_recipients_get_exact_shares() {
 
 #[test]
 fn rounding_remainder_goes_to_first_recipient() {
-    // 1_000_001 × 0.5% = 5_000.005 → fee 5_000; 995_001 left to split.
-    // 50% = 497_500.5, 30% = 298_500.3, 20% = 199_000.2 → floors sum to
-    // 995_000, and the remaining 1 goes to the first recipient.
     let split = vec![
         share(FREELANCER, 5_000),
         share(MEMBER, 3_000),
         share(MEMBER2, 2_000),
     ];
+    // Fee 5_000; the floored shares of 995_001 sum to 995_000, and the
+    // remaining 1 goes to the first recipient.
     let plan = release_plan(1_000_001, FEE_BPS, &split);
     assert_eq!(plan.fee, 5_000);
     assert_eq!(plan.shares, vec![497_501, 298_500, 199_000]);
@@ -84,8 +80,6 @@ fn total_paid_out_always_equals_the_milestone_amount() {
                     let plan = release_plan(total, fee_bps, split);
                     assert_eq!(plan.fee + plan.shares.iter().sum::<u128>(), total);
                     assert_eq!(plan.fee, total * u128::from(fee_bps) / 10_000);
-                    // The first recipient gets at most one unit per recipient
-                    // more than its exact share.
                     let exact = (total - plan.fee) * u128::from(split[0].bps) / 10_000;
                     assert!(plan.shares[0] - exact < split.len() as u128);
                 }
@@ -106,10 +100,6 @@ fn mul_bps_does_not_overflow() {
 
 #[test]
 fn create_escrow_locks_the_fee_and_window_of_the_time() {
-    // R-19: changing the fee configuration does not affect escrows already
-    // on-chain. The configuration changes only through a redeploy (D-15);
-    // here the stored value is changed directly to simulate one. New terms
-    // must then be signed with the new fee.
     let mut contract = new_contract();
     let old = create_default(&mut contract);
     contract.config.fee_bps = 100;

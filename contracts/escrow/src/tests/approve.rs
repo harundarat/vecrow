@@ -1,5 +1,3 @@
-//! R-06 (signed approval) and R-19 (fee on release).
-
 use super::*;
 
 fn submitted(contract: &mut VecrowEscrow, wallet: &Wallet) -> String {
@@ -15,8 +13,6 @@ fn each_wallet_scheme_approves_and_pays_fee_and_split() {
         let id = submitted(&mut contract, &wallet);
         approve(&mut contract, &id, 0, &wallet, 1, T0_MS + 10);
 
-        // R-19: 1,000 USDC with 70/30 pays 5 to the treasury, then 696.5 and
-        // 298.5, each through ft_transfer + on_payout.
         assert_eq!(
             ft_transfers(),
             vec![
@@ -219,8 +215,6 @@ fn unfunded_escrow_cannot_be_approved() {
 
 #[test]
 fn changing_the_fee_config_does_not_affect_existing_escrows() {
-    // R-19: the fee is locked at creation. A redeploy with a new fee (D-15)
-    // is simulated by changing the stored configuration.
     let mut contract = new_contract();
     let wallet = Wallet::near();
     let id = submitted(&mut contract, &wallet);
@@ -243,8 +237,6 @@ fn zero_amounts_are_not_transferred() {
     fund(&mut contract, &id, 1);
     submit(&mut contract, &id, 0, T0_MS);
     approve(&mut contract, &id, 0, &wallet, 2, T0_MS);
-    // Fee floor(1 × 0.5%) = 0 and the 30% share floors to 0; only the
-    // freelancer is paid.
     assert_eq!(ft_transfers(), vec![(FREELANCER.to_string(), 1)]);
     assert_eq!(view(&contract, &id).status, EscrowStatus::Completed);
 }

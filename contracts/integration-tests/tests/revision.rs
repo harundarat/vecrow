@@ -1,5 +1,3 @@
-//! R-17 on a sandbox node: signed revision requests forwarded by the relayer.
-
 mod common;
 
 use common::*;
@@ -11,7 +9,6 @@ async fn two_revisions_then_approval() -> anyhow::Result<()> {
     let id = env.funded_escrow(&wallet).await?;
     env.submit(&id, 0).await?.into_result()?;
 
-    // Not signed by the approver.
     let other = Wallet::Near(wallet_fixtures::NearWallet::new(
         env.client.id().as_str(),
         99,

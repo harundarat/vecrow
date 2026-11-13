@@ -1,8 +1,3 @@
-//! NEP-297 events, logged as `EVENT_JSON:{"standard":"vecrow","version":"1.0.0","event":...,"data":...}`.
-//!
-//! The backend can index these logs for the dashboard and the CSV export; the
-//! contract state stays the source of truth.
-
 use crate::signature::Approver;
 use near_sdk::json_types::U128;
 use near_sdk::{AccountId, near};
@@ -18,11 +13,7 @@ pub enum VecrowEvent {
         total: U128,
     },
     #[event_version("1.0.0")]
-    EscrowCancelled {
-        escrow_id: String,
-        /// `freelancer` or `approver`.
-        by: String,
-    },
+    EscrowCancelled { escrow_id: String, by: String },
     #[event_version("1.0.0")]
     EscrowFunded {
         escrow_id: String,
@@ -47,7 +38,6 @@ pub enum VecrowEvent {
         milestone: u32,
         amount: U128,
         fee: U128,
-        /// `approve_milestone` or `auto_release`.
         by: String,
     },
     #[event_version("1.0.0")]
@@ -57,7 +47,6 @@ pub enum VecrowEvent {
         amount: U128,
         refund_account: AccountId,
     },
-    /// The result of one `ft_transfer`; unpaid amounts become pending.
     #[event_version("1.0.0")]
     Payout {
         escrow_id: String,

@@ -1,7 +1,3 @@
-//! Signed-action format and the three signature schemes (R-06 building
-//! blocks). Fixtures come from `wallet-fixtures`, which signs with
-//! ed25519-dalek, k256 and borsh exactly as the wallets do.
-
 use super::*;
 use crate::signature::*;
 
@@ -10,7 +6,7 @@ fn key(wallet: &Wallet) -> ApproverKey {
 }
 
 #[test]
-fn terms_message_matches_the_documented_bytes() {
+fn terms_message_matches_the_expected_bytes() {
     set_context(RELAYER, T0_MS);
     let wallet = Wallet::evm();
     let terms = default_terms("e7", &wallet);
@@ -35,7 +31,7 @@ fn terms_message_of(terms: &EscrowTerms, wallet: &Wallet) -> String {
 }
 
 #[test]
-fn action_messages_match_the_documented_bytes() {
+fn action_messages_match_the_expected_bytes() {
     let nonce = wallet_fixtures::nonce(0xff);
     for (action, name) in [
         (Action::Approve, "approve_milestone"),
@@ -169,8 +165,6 @@ fn eip191_rejects_high_s_signatures() {
         Ok(false)
     );
 
-    // The twin is otherwise valid: without the malleability check it recovers
-    // the wallet's address, so only the EIP-2 check rejects it.
     let bytes = hex::decode(&high_s[2..]).unwrap();
     let hash = near_sdk::env::keccak256_array(eip191_payload("m"));
     let public_key = near_sdk::env::ecrecover(&hash, &bytes[..64], bytes[64] - 27, false)
@@ -295,12 +289,6 @@ fn nonces_must_be_64_lowercase_hex() {
     }
 }
 
-/// Signatures made by independent JavaScript implementations: ethers v6
-/// `signMessage` (EIP-191, as dApps use with MetaMask), node:crypto ed25519 +
-/// bs58 (Solana `signMessage`), and the borsh JS package with the NEP-413
-/// schema (NEAR `signMessage`). Copied from the backend's wallet-login tests
-/// (`backend/internal/walletsig/testdata/vectors.json`); none of it is
-/// produced by Rust code in this repository.
 #[test]
 fn signatures_from_independent_js_implementations_verify() {
     use near_sdk::serde_json::Value;

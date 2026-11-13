@@ -1,6 +1,3 @@
-//! R-18 on a sandbox node: the freelancer refunds unsubmitted milestones to
-//! the client's refund account, without a fee.
-
 mod common;
 
 use common::*;
@@ -14,8 +11,6 @@ async fn release_one_refund_the_rest_and_complete() -> anyhow::Result<()> {
     env.submit(&id, 0).await?.into_result()?;
     env.approve(&id, 0, &wallet, 2).await?.into_result()?;
 
-    // The client cannot trigger a refund, and Released milestones are not
-    // refundable.
     let refund = |caller, milestone: Option<u32>| {
         env.call(
             caller,
@@ -36,7 +31,6 @@ async fn release_one_refund_the_rest_and_complete() -> anyhow::Result<()> {
     let treasury_before = env.balance(env.treasury.id()).await?;
     refund(&env.freelancer, Some(1)).await?.into_result()?;
 
-    // The full 500 USDC goes back to the refund account; no fee.
     assert_eq!(
         env.balance(env.client.id()).await? - client_before,
         usdc(500)
@@ -49,7 +43,6 @@ async fn release_one_refund_the_rest_and_complete() -> anyhow::Result<()> {
     assert_eq!(escrow["status"], "Completed");
     assert_eq!(escrow["balance"], "0");
 
-    // R-02: a transfer to a Completed escrow is returned in full.
     env.mint(env.client.id(), usdc(1_500)).await?;
     assert_eq!(env.fund(&id, usdc(1_500)).await?, 0);
     assert_eq!(env.balance(env.escrow.id()).await?, 0);

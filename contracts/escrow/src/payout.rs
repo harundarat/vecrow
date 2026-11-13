@@ -1,19 +1,11 @@
-//! Payouts: every transfer out of the contract is an `ft_transfer` of USDC
-//! followed by the `on_payout` callback (architecture §6.3, R-20). A failed
-//! transfer is recorded in the escrow's pending payouts instead of being lost.
-
 use crate::events::VecrowEvent;
 use crate::split::release_plan;
 use crate::*;
 use near_sdk::json_types::U128;
 use near_sdk::{Gas, NearToken, Promise, ext_contract, is_promise_success};
 
-/// Static gas for `ft_transfer` on the USDC contract.
 pub const GAS_FT_TRANSFER: Gas = Gas::from_tgas(10);
-/// Static gas for the `on_payout` callback. Unused gas of the call is also
-/// shared out to each transfer and callback by weight.
 pub const GAS_ON_PAYOUT: Gas = Gas::from_tgas(10);
-/// Gas kept for the calling method itself after scheduling its payouts.
 const GAS_RESERVE: Gas = Gas::from_tgas(10);
 
 #[ext_contract(ext_ft)]
@@ -22,7 +14,6 @@ trait FungibleTokenCore {
     fn ft_transfer(&mut self, receiver_id: AccountId, amount: U128, memo: Option<String>);
 }
 
-/// Why a milestone was released; written in the `milestone_released` event.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReleaseTrigger {
     Approval,
@@ -40,9 +31,6 @@ impl ReleaseTrigger {
 
 #[near]
 impl VecrowEscrow {
-    /// Callback of every payout. Records the amount as pending for
-    /// `account_id` if the transfer failed (e.g. the account is not
-    /// registered on the USDC contract). Returns whether it was paid.
     #[private]
     pub fn on_payout(&mut self, escrow_id: String, account_id: AccountId, amount: U128) -> bool {
         let paid = is_promise_success();
@@ -71,12 +59,6 @@ impl VecrowEscrow {
         paid
     }
 
-    /// Re-sends the pending payout of `account_id` in an escrow (R-20), e.g.
-    /// after the backend registered the account on the USDC contract. Anyone
-    /// may call it; a backend job does so automatically. The pending amount
-    /// is removed before the transfer is sent and restored by `on_payout` only
-    /// if it fails again, so two calls in a row can never pay twice. Returns
-    /// whether the transfer succeeded.
     pub fn retry_payout(&mut self, escrow_id: String, account_id: AccountId) -> Promise {
         let mut escrow = self.load_escrow(&escrow_id);
         let index = escrow
@@ -84,6 +66,8 @@ impl VecrowEscrow {
             .iter()
             .position(|p| p.account_id == account_id)
             .unwrap_or_else(|| env::panic_str("no pending payout for this account"));
+        // Removed before sending and restored by `on_payout` only on failure, so
+        // concurrent retries can never pay twice.
         let pending = escrow.pending_payouts.remove(index);
         require_payout_gas(1);
         self.save_escrow(&escrow_id, escrow);
@@ -92,8 +76,6 @@ impl VecrowEscrow {
 }
 
 impl VecrowEscrow {
-    /// Sends `amount` USDC to `account_id`. The 1 yoctoNEAR that
-    /// `ft_transfer` requires comes from the contract's balance.
     pub(crate) fn payout(&self, escrow_id: &str, account_id: &AccountId, amount: u128) -> Promise {
         ext_ft::ext(self.config.usdc_contract_id.clone())
             .with_attached_deposit(NearToken::from_yoctonear(1))
@@ -110,10 +92,6 @@ impl VecrowEscrow {
             )
     }
 
-    /// Releases a `Submitted` milestone: marks it `Released`, takes its amount
-    /// out of the escrow balance, and pays the fee to the treasury and the
-    /// rest to the split recipients (R-03, R-19). Zero amounts are skipped,
-    /// since NEP-141 rejects them.
     pub(crate) fn release_milestone(
         &mut self,
         escrow_id: &str,
@@ -138,6 +116,7 @@ impl VecrowEscrow {
                 .map(|s| s.account_id.clone())
                 .zip(plan.shares),
         );
+        // NEP-141 rejects zero-amount transfers.
         payouts.retain(|(_, amount)| *amount > 0);
         require_payout_gas(payouts.len());
 
@@ -156,8 +135,6 @@ impl VecrowEscrow {
     }
 }
 
-/// Fails early, with a clear message, when the attached gas cannot cover
-/// `count` payouts and their callbacks.
 pub(crate) fn require_payout_gas(count: usize) {
     let per_payout = GAS_FT_TRANSFER.saturating_add(GAS_ON_PAYOUT);
     let needed = Gas::from_gas(per_payout.as_gas() * count as u64).saturating_add(GAS_RESERVE);
@@ -168,8 +145,6 @@ pub(crate) fn require_payout_gas(count: usize) {
     );
 }
 
-/// Marks the escrow `Completed` once every milestone is `Released` or
-/// `Refunded`.
 pub(crate) fn complete_if_done(escrow_id: &str, escrow: &mut Escrow) {
     let done = escrow.milestones.iter().all(|m| {
         matches!(

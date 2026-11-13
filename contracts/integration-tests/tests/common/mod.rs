@@ -1,9 +1,3 @@
-//! Shared setup for the sandbox tests: a local NEAR node with the mock USDC
-//! token, the escrow contract, and the accounts of a typical escrow.
-//!
-//! The wasm files come from `make build` (cargo-near), so the tests run the
-//! same binaries that would be deployed.
-
 #![allow(dead_code)] // Each test binary uses a different subset.
 
 use anyhow::{Context, Result, ensure};
@@ -19,12 +13,10 @@ pub const FEE_BPS: u16 = 50;
 pub const WINDOW_SEC: u64 = 14 * 24 * 60 * 60;
 pub const ONE_YOCTO: NearToken = NearToken::from_yoctonear(1);
 
-/// USDC amount in base units (6 decimals).
 pub fn usdc(whole: u128) -> u128 {
     whole * 1_000_000
 }
 
-/// Reads `target/near/<dir>/<file>`, written by `make build`.
 fn wasm(dir: &str, file: &str) -> Result<Vec<u8>> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../target/near")
@@ -43,20 +35,15 @@ pub struct Env {
     pub usdc: Contract,
     pub escrow: Contract,
     pub treasury: Account,
-    /// Pays `storage_deposit` registrations, like the Vecrow backend.
     pub backend: Account,
-    /// Pays gas to forward signed payloads, like the Vecrow relayer.
     pub relayer: Account,
     pub freelancer: Account,
-    /// The freelancer's NEAR wallet key, the same key as `freelancer`'s.
     pub freelancer_wallet: wallet_fixtures::NearWallet,
     pub member: Account,
-    /// The client's NEAR account: funds the escrow and receives refunds.
     pub client: Account,
     next_escrow: Cell<u32>,
 }
 
-/// Deploys and initializes a mock NEP-141 token on a new account `name`.
 pub async fn deploy_token(worker: &Worker<Sandbox>, name: &str) -> Result<Contract> {
     let account = subaccount(worker, name, 20).await?;
     let token = account
@@ -83,15 +70,10 @@ async fn subaccount(worker: &Worker<Sandbox>, name: &str, near: u128) -> Result<
     Ok(account)
 }
 
-/// Starts a sandbox with the default 14-day review window.
 pub async fn setup() -> Result<Env> {
     setup_with_window(WINDOW_SEC).await
 }
 
-/// Starts a sandbox, deploys the mock USDC and the escrow contract, and
-/// registers the escrow, the treasury, the freelancer, the member and the
-/// client on the token, as the backend does at deploy and before
-/// `create_escrow`.
 pub async fn setup_with_window(review_window_sec: u64) -> Result<Env> {
     let worker = near_workspaces::sandbox().await?;
     let root = worker.root_account()?;
@@ -115,7 +97,6 @@ pub async fn setup_with_window(review_window_sec: u64) -> Result<Env> {
         .await?
         .into_result()?;
 
-    // The freelancer's account holds the key its NEAR wallet signs with.
     let freelancer_wallet =
         wallet_fixtures::NearWallet::new(&format!("freelancer.{}", root.id()), 5);
     let freelancer = root
@@ -151,7 +132,6 @@ pub async fn setup_with_window(review_window_sec: u64) -> Result<Env> {
     Ok(env)
 }
 
-/// A client wallet of one of the three supported schemes.
 pub enum Wallet {
     Near(wallet_fixtures::NearWallet),
     Evm(wallet_fixtures::EvmWallet),
@@ -171,7 +151,6 @@ impl Wallet {
         Self::Solana(wallet_fixtures::SolanaWallet::new(13))
     }
 
-    /// The `approver` field of the terms.
     pub fn approver(&self) -> Value {
         match self {
             Self::Near(w) => json!({
@@ -192,7 +171,6 @@ impl Wallet {
         }
     }
 
-    /// Signs like the wallet; NEP-413 uses `recipient` (the escrow contract).
     pub fn sign(&self, message: &str, nonce: &[u8; 32], recipient: &AccountId) -> String {
         match self {
             Self::Near(w) => w.sign_message(message, nonce, recipient.as_str()),
@@ -202,7 +180,6 @@ impl Wallet {
     }
 }
 
-/// Escrow terms, before they are signed.
 pub struct Terms {
     pub escrow_id: String,
     pub freelancer: AccountId,
@@ -214,26 +191,20 @@ pub struct Terms {
 }
 
 impl Env {
-    /// A new escrow ID, `e1`, `e2`, … as the backend would assign.
     pub fn next_escrow_id(&self) -> String {
         let n = self.next_escrow.get();
         self.next_escrow.set(n + 1);
         format!("e{n}")
     }
 
-    /// Current block time in milliseconds.
     pub async fn now_ms(&self) -> Result<u64> {
         Ok(self.worker.view_block().await?.timestamp() / 1_000_000)
     }
 
-    /// A deadline one hour after the current block time.
     pub async fn deadline_ms(&self) -> Result<u64> {
         Ok(self.now_ms().await? + 3_600_000)
     }
 
-    /// The default terms: 1,000 and 500 USDC milestones, a 70/30 split
-    /// between the freelancer and the member, the client's account for
-    /// refunds, the production fee and a one-hour deadline.
     pub async fn default_terms(&self) -> Result<Terms> {
         Ok(Terms {
             escrow_id: self.next_escrow_id(),
@@ -249,13 +220,10 @@ impl Env {
         })
     }
 
-    /// `create_escrow` arguments: the terms with `client` as approver, signed
-    /// by the freelancer's NEAR wallet (NEP-413) and by `client`.
     pub fn signed_terms(&self, terms: &Terms, client: &Wallet) -> Value {
         self.signed_terms_by(terms, &self.freelancer_wallet, client)
     }
 
-    /// Like `signed_terms`, with another freelancer wallet.
     pub fn signed_terms_by(
         &self,
         terms: &Terms,
@@ -307,21 +275,17 @@ impl Env {
         })
     }
 
-    /// The relayer puts `terms` on-chain with `client` as the approver.
     pub async fn create(&self, terms: &Terms, client: &Wallet) -> Result<ExecutionFinalResult> {
         let args = self.signed_terms(terms, client);
         self.call(&self.relayer, "create_escrow", args).await
     }
 
-    /// Puts the default terms on-chain with `client` as the approver.
     pub async fn create_escrow_for(&self, client: &Wallet) -> Result<String> {
         let terms = self.default_terms().await?;
         self.create(&terms, client).await?.into_result()?;
         Ok(terms.escrow_id)
     }
 
-    /// Puts terms with the given milestones and `(account, bps)` split
-    /// on-chain, with `client` as the approver.
     pub async fn create_escrow(
         &self,
         milestones: &[u128],
@@ -335,23 +299,18 @@ impl Env {
         Ok(terms.escrow_id)
     }
 
-    /// Mints `amount` to the client and funds the escrow with it.
     pub async fn mint_and_fund(&self, escrow_id: &str, amount: u128) -> Result<()> {
         self.mint(self.client.id(), amount).await?;
         ensure!(self.fund(escrow_id, amount).await? == amount);
         Ok(())
     }
 
-    /// Puts the default terms on-chain with `client` as the approver and funds
-    /// the escrow with exactly the total.
     pub async fn funded_escrow(&self, client: &Wallet) -> Result<String> {
         let id = self.create_escrow_for(client).await?;
         self.mint_and_fund(&id, usdc(1_500)).await?;
         Ok(id)
     }
 
-    /// Registers `account_id` on the token with `storage_deposit`
-    /// (`registration_only`), paid by the backend account.
     pub async fn register(&self, account_id: &AccountId) -> Result<()> {
         let bounds: Value = self.usdc.view("storage_balance_bounds").await?.json()?;
         let min: u128 = bounds["min"].as_str().context("min")?.parse()?;
@@ -365,8 +324,6 @@ impl Env {
         Ok(())
     }
 
-    /// `sender` calls `ft_transfer_call` on `token` to the escrow contract
-    /// with `msg = escrow_id`. The result is the amount the escrow kept.
     pub async fn transfer_call(
         &self,
         token: &Contract,
@@ -390,7 +347,6 @@ impl Env {
         Ok(used.parse()?)
     }
 
-    /// The client funds `escrow_id` with USDC; returns the amount kept.
     pub async fn fund(&self, escrow_id: &str, amount: u128) -> Result<u128> {
         self.transfer_call(&self.usdc, &self.client, escrow_id, amount)
             .await
@@ -416,7 +372,6 @@ impl Env {
         Ok(balance.parse()?)
     }
 
-    /// Token balances of the given accounts.
     pub async fn balances(&self, accounts: &[&AccountId]) -> Result<Vec<u128>> {
         let mut balances = Vec::new();
         for account in accounts {
@@ -443,7 +398,6 @@ impl Env {
             .to_string())
     }
 
-    /// Calls an escrow method as `caller` with no attached deposit.
     pub async fn call(
         &self,
         caller: &Account,
@@ -458,8 +412,6 @@ impl Env {
             .await?)
     }
 
-    /// Creates a sandbox account with `near` NEAR that is not registered on
-    /// the token.
     pub async fn new_account(&self, name: &str, near: u128) -> Result<Account> {
         subaccount(&self.worker, name, near).await
     }
@@ -473,8 +425,6 @@ impl Env {
         .await
     }
 
-    /// Arguments of `approve_milestone` or `request_revision` signed by
-    /// `wallet`.
     pub fn milestone_args(
         &self,
         action: &str,
@@ -502,8 +452,6 @@ impl Env {
         })
     }
 
-    /// The relayer forwards `action` (`approve_milestone` or
-    /// `request_revision`) signed by `wallet`.
     pub async fn signed_milestone_action(
         &self,
         action: &str,
@@ -523,7 +471,6 @@ impl Env {
         self.call(&self.relayer, action, args).await
     }
 
-    /// Arguments of `cancel` signed by the approver `wallet`.
     pub fn cancel_args(
         &self,
         escrow_id: &str,
@@ -558,7 +505,6 @@ impl Env {
     }
 }
 
-/// Asserts that a transaction failed and that its error mentions `expected`.
 pub fn assert_failure(result: ExecutionFinalResult, expected: &str) {
     match result.into_result() {
         Ok(_) => panic!("expected failure containing {expected:?}, but the call succeeded"),
@@ -595,9 +541,6 @@ pub mod meta {
         Ok(worker.view_access_key(account.id(), &key).await?.nonce + 1)
     }
 
-    /// `sender` signs a delegate action calling `method` on `receiver` with
-    /// no deposit; `relayer` wraps it in a transaction and pays for it.
-    /// Returns the error of the first failed receipt, if any.
     pub async fn call(
         worker: &Worker<Sandbox>,
         relayer: &Account,

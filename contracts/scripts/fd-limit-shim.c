@@ -1,10 +1,5 @@
-// Preloaded into the nearcore sandbox by sandbox-fd-shim.sh.
-//
-// nearcore sets its open-file limit (RLIMIT_NOFILE) to 65,535 at startup and
-// exits if that fails. In containers whose hard limit is lower and cannot be
-// raised (no CAP_SYS_RESOURCE), this library clamps the request to the
-// current hard limit, which is plenty for a local test node. Other limits are
-// passed through unchanged.
+// nearcore raises RLIMIT_NOFILE to 65,535 at startup and exits on failure.
+// Clamp the request to the current hard limit for containers that cannot raise it.
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <sys/resource.h>

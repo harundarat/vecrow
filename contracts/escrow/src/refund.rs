@@ -1,5 +1,3 @@
-//! Refund unsubmitted milestones to the client (R-18, D-04).
-
 use crate::events::VecrowEvent;
 use crate::payout::{complete_if_done, require_payout_gas};
 use crate::*;
@@ -7,11 +5,6 @@ use near_sdk::json_types::U128;
 
 #[near]
 impl VecrowEscrow {
-    /// Refunds `Pending` milestones of a `Funded` escrow to the client's
-    /// `refund_account`: the given milestone, or every `Pending` one when
-    /// `milestone` is omitted. Only the freelancer can call it; the client
-    /// cannot. Milestones become `Refunded`, no fee is charged, and the amount
-    /// is sent in one transfer.
     pub fn refund_unsubmitted(&mut self, escrow_id: String, milestone: Option<u32>) {
         let mut escrow = self.load_escrow(&escrow_id);
         require_freelancer(&escrow);

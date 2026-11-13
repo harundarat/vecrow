@@ -9,8 +9,7 @@ publish.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
-# Same versions as near-workspaces uses, to sign and send NEP-366 meta
-# transactions, which near-workspaces has no builder for.
+# Same versions as near-workspaces; it has no builder for NEP-366 meta transactions.
 near-crypto = "0.38"
 near-jsonrpc-client = "0.23"
 near-primitives = "0.38"

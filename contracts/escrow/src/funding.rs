@@ -1,5 +1,3 @@
-//! Funding through NEP-141 `ft_transfer_call` (R-02, D-05).
-
 use crate::events::VecrowEvent;
 use crate::*;
 use near_sdk::PromiseOrValue;
@@ -7,17 +5,6 @@ use near_sdk::json_types::U128;
 
 #[near]
 impl VecrowEscrow {
-    /// NEP-141 receiver, called by the token contract during
-    /// `ft_transfer_call(receiver_id = this contract, msg = escrow_id)`.
-    /// Returns the amount the token contract must give back to `sender_id`:
-    ///
-    /// - USDC of at least the total, to a `Created` escrow: the escrow becomes
-    ///   `Funded` with exactly the total, and the excess is returned.
-    /// - Anything else is returned in full: less than the total, an escrow in
-    ///   any other status, an unknown `escrow_id` (including one that is not
-    ///   on-chain yet), or a token other than the configured USDC.
-    ///
-    /// Returned deposits are not charged a fee.
     pub fn ft_on_transfer(
         &mut self,
         sender_id: AccountId,
@@ -35,7 +22,6 @@ impl VecrowEscrow {
 }
 
 impl VecrowEscrow {
-    /// Applies the funding rules and returns the amount kept.
     fn accept_funding(
         &mut self,
         sender_id: &AccountId,

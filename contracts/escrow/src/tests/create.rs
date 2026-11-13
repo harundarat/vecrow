@@ -1,11 +1,5 @@
-//! R-01 (create on-chain and cancel), with the R-03 split rules, the R-04
-//! approver and refund-account rules, and the R-19 fee check of
-//! `create_escrow`.
-
 use super::*;
 
-/// Signs the default terms (as modified by `edit`) with the freelancer and
-/// `client` wallets, then calls `create_escrow`.
 fn create_edited(
     contract: &mut VecrowEscrow,
     client: &Wallet,
@@ -119,7 +113,6 @@ fn malformed_escrow_id_is_rejected() {
 fn existing_escrow_id_is_rejected() {
     let mut contract = new_contract();
     create_edited(&mut contract, &Wallet::near(), |_| {});
-    // Even the exact same signed terms cannot be put on-chain twice.
     create_edited(&mut contract, &Wallet::near(), |_| {});
 }
 
@@ -164,8 +157,6 @@ fn terms_at_their_deadline_are_accepted() {
 #[test]
 #[should_panic(expected = "fee_bps does not match the current configuration")]
 fn terms_with_another_fee_are_rejected() {
-    // R-19: terms signed with a fee_bps that no longer matches the
-    // configuration (e.g. signed before a redeploy) are rejected.
     let mut contract = new_contract();
     create_edited(&mut contract, &Wallet::near(), |t| t.fee_bps = 40);
 }
@@ -188,7 +179,6 @@ fn terms_signed_by_another_freelancer_key_are_rejected() {
 #[test]
 #[should_panic(expected = "invalid client signature")]
 fn terms_not_signed_by_the_approver_wallet_are_rejected() {
-    // R-04: the client's signature must come from the approver wallet.
     let mut contract = new_contract();
     let approver = Wallet::evm();
     let other = Wallet::Evm(EvmWallet::new(77));
@@ -223,8 +213,6 @@ fn missing_signatures_are_rejected() {
     }
 }
 
-/// R-01: terms that differ in any field from what both parties signed are
-/// rejected.
 #[test]
 fn terms_that_differ_from_what_was_signed_are_rejected() {
     type Edit = Box<dyn Fn(&mut EscrowTerms)>;
@@ -415,8 +403,6 @@ fn approver_equal_to_split_recipient_is_rejected() {
 
 #[test]
 fn approver_with_the_freelancer_signing_key_is_rejected() {
-    // A NEAR or Solana approver holding the ed25519 key the freelancer signed
-    // the terms with is the freelancer, whatever account name it gives.
     for same_key in [
         Wallet::Near(NearWallet::new(CLIENT, 5)),
         Wallet::Solana(SolanaWallet::new(5)),
@@ -435,8 +421,6 @@ fn approver_with_the_freelancer_signing_key_is_rejected() {
     }
 }
 
-/// An approver is also rejected when the freelancer or a recipient is the
-/// implicit or eth-implicit NEAR account of the approver's key.
 #[test]
 fn approver_matching_an_implicit_account_is_rejected() {
     let near = NearWallet::new("someone.test.near", 31);
@@ -579,8 +563,6 @@ fn init_rejects_zero_review_window() {
 
 #[test]
 fn approver_and_refund_account_never_change_after_creation() {
-    // R-04: no method changes them. Run every state-changing method on an
-    // escrow and check both after each step.
     let mut contract = new_contract();
     let wallet = Wallet::evm();
     let id = funded_escrow(&mut contract, &wallet);

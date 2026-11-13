@@ -1,6 +1,3 @@
-//! Put escrows on-chain from terms signed by both parties, and cancel them
-//! before funding (R-01, R-03, R-04, R-19, R-23; D-14).
-
 use crate::events::VecrowEvent;
 use crate::signature::{
     Action, ApproverKey, EscrowTerms, FreelancerSignature, action_message, parse_near_public_key,
@@ -12,22 +9,6 @@ use near_sdk::json_types::U128;
 
 #[near]
 impl VecrowEscrow {
-    /// Puts an escrow on-chain with terms that both parties signed (R-01,
-    /// R-23). The backend calls it through the relayer after the creator
-    /// approved; the caller gains no rights, because validity comes only from
-    /// the two signatures over the same message (`signature::terms_message`):
-    ///
-    /// - `freelancer_signature`: NEP-413 by the freelancer's NEAR wallet;
-    /// - `client_signature`: by the approver wallet named in the terms, in its
-    ///   scheme, which also proves that the client controls it (R-04).
-    ///
-    /// Rejects an escrow ID that exists or is malformed, terms past their
-    /// deadline, a `fee_bps` other than the current configuration, the split
-    /// and approver rules of R-03 and R-04, and any signature that does not
-    /// match. The escrow starts `Created`, with the fee and the review window
-    /// locked. Split recipients and the refund account should already be
-    /// registered on the USDC contract (R-20); if not, their payouts are kept
-    /// as pending.
     pub fn create_escrow(
         &mut self,
         terms: EscrowTerms,
@@ -125,12 +106,6 @@ impl VecrowEscrow {
         .emit();
     }
 
-    /// Cancels an escrow that is not funded yet (`Created`), R-01. Either the
-    /// freelancer calls it (via the relayer; checked with the predecessor),
-    /// or anyone forwards a cancellation signed by the approver: `nonce`,
-    /// `deadline_ms` and `signature` over `signature::action_message(cancel)`,
-    /// with the same nonce and deadline rules as approvals. Anyone else is
-    /// rejected.
     pub fn cancel(
         &mut self,
         escrow_id: String,
@@ -172,11 +147,6 @@ impl VecrowEscrow {
     }
 }
 
-/// The R-04 rules on who the approver and the refund account may be (D-18):
-/// the approver is neither the freelancer nor a split recipient, also under
-/// their implicit and eth-implicit account IDs or the freelancer's signing
-/// key; the refund account is neither of them nor the contract. A freelancer
-/// that is an implicit account must sign with its own key.
 fn check_parties(terms: &EscrowTerms, approver: &ApproverKey, freelancer_key: &[u8; 32]) {
     let is_party = |account: &str| {
         account == terms.freelancer.as_str()

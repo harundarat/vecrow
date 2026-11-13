@@ -1,6 +1,3 @@
-//! R-07 (auto-release after the review window) and the R-17 rule that the
-//! window restarts at re-submission.
-
 use super::*;
 
 const DAY_MS: u64 = 24 * 60 * 60 * 1_000;
@@ -52,7 +49,6 @@ fn window_is_measured_from_the_latest_submission() {
     let resubmitted_at = T0_MS + 10 * DAY_MS;
     submit(&mut contract, &id, 0, resubmitted_at);
 
-    // 14 days after the first submission is not enough.
     let early = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         auto_release(&mut contract, &id, 0, T0_MS + WINDOW_MS)
     }));
@@ -66,7 +62,6 @@ fn window_is_measured_from_the_latest_submission() {
         MilestoneStatus::Submitted
     );
 
-    // 14 days after the re-submission is.
     auto_release(&mut contract, &id, 0, resubmitted_at + WINDOW_MS);
     assert_eq!(
         view(&contract, &id).milestones[0].status,
@@ -111,7 +106,6 @@ fn unfunded_escrow_cannot_be_auto_released() {
 
 #[test]
 fn window_is_configurable_at_deploy_time() {
-    // A demo deployment with a 60-second window.
     set_context(CONTRACT, T0_MS);
     let mut contract = VecrowEscrow::new(account(USDC), account(TREASURY), FEE_BPS, 60);
     let id = funded_escrow(&mut contract, &Wallet::near());
