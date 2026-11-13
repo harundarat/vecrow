@@ -4,6 +4,7 @@ import { cn } from "@/utils"
 import { rootMetadata } from "./metadata"
 import "./globals.css"
 import { AppKitContext } from "@/context/appkit"
+import { AuthProvider } from "@/context/auth"
 import { NearProvider } from "@/context/near"
 
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-sans" })
@@ -33,7 +34,9 @@ export default function RootLayout({
       <body>
         <ThemeProvider>
           <AppKitContext>
-            <NearProvider>{children}</NearProvider>
+            <NearProvider>
+              <AuthProvider>{children}</AuthProvider>
+            </NearProvider>
           </AppKitContext>
         </ThemeProvider>
       </body>

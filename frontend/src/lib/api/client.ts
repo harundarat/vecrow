@@ -1,0 +1,72 @@
+import { env } from "@/env"
+
+export class ApiError extends Error {
+  readonly status: number
+  readonly code: string
+
+  constructor(status: number, code: string, message: string) {
+    super(message)
+    this.name = "ApiError"
+    this.status = status
+    this.code = code
+  }
+}
+
+export type RequestOptions = {
+  method?: "GET" | "POST" | "PATCH" | "DELETE"
+  body?: unknown
+  token?: string | null
+  guestToken?: string | null
+  signal?: AbortSignal
+}
+
+export async function apiFetch<T>(
+  path: string,
+  { method = "GET", body, token, guestToken, signal }: RequestOptions = {}
+): Promise<T> {
+  const headers: Record<string, string> = { Accept: "application/json" }
+  if (body !== undefined) headers["Content-Type"] = "application/json"
+  if (token) headers.Authorization = `Bearer ${token}`
+  if (guestToken) headers["X-Guest-Token"] = guestToken
+
+  let res: Response
+  try {
+    res = await fetch(`${env.NEXT_PUBLIC_API_URL}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
+    })
+  } catch (err) {
+    if (signal?.aborted) throw err
+    throw new ApiError(0, "network_error", "Could not reach the Vecrow server.")
+  }
+
+  if (res.status === 204) return undefined as T
+
+  const data: unknown = await res.json().catch(() => undefined)
+  if (!res.ok) {
+    const error = isErrorEnvelope(data) ? data.error : undefined
+    throw new ApiError(
+      res.status,
+      error?.code ?? "http_error",
+      error?.message ?? `Request failed with status ${res.status}.`
+    )
+  }
+  return data as T
+}
+
+type ErrorEnvelope = { error: { code: string; message: string } }
+
+function isErrorEnvelope(data: unknown): data is ErrorEnvelope {
+  if (typeof data !== "object" || data === null || !("error" in data)) {
+    return false
+  }
+  const error = (data as { error: unknown }).error
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    typeof (error as { code?: unknown }).code === "string" &&
+    typeof (error as { message?: unknown }).message === "string"
+  )
+}

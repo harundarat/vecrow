@@ -3,55 +3,39 @@
 import { createAppKit } from "@reown/appkit/react"
 import { SolanaAdapter } from "@reown/appkit-adapter-solana"
 import { EthersAdapter } from "@reown/appkit-adapter-ethers"
-import { BitcoinAdapter } from "@reown/appkit-adapter-bitcoin"
-import { TonAdapter } from "@reown/appkit-adapter-ton"
 import {
-  mainnet,
   arbitrum,
-  sepolia,
-  AppKitNetwork,
-} from "@reown/appkit/networks"
-import { solana, solanaTestnet } from "@reown/appkit/networks"
-import { bitcoin, bitcoinTestnet } from "@reown/appkit/networks"
-import { ton, tonTestnet } from "@reown/appkit/networks"
-import { env } from "@/env"
-
-// 1. Get projectId at https://dashboard.reown.com
-const projectId = env.NEXT_PUBLIC_REOWN_PROJECT_ID
-
-// 2. Create a metadata object
-const metadata = {
-  name: "Vecrow",
-  description:
-    "Vecrow is a escrow service for crypto transactions, built on NEAR Protocol.",
-  url: "http://localhost:3000", // origin must match your domain & subdomain
-  icons: ["https://avatars.mywebsite.com/"],
-}
-
-const ethersAdapter = new EthersAdapter()
-const solanaWeb3JsAdapter = new SolanaAdapter()
-const bitcoinAdapter = new BitcoinAdapter()
-const tonAdapter = new TonAdapter()
-
-const networks = [
   mainnet,
-  arbitrum,
   sepolia,
   solana,
   solanaTestnet,
-  bitcoin,
-  bitcoinTestnet,
-  ton,
-  tonTestnet,
-] as [AppKitNetwork, ...AppKitNetwork[]]
+  type AppKitNetwork,
+} from "@reown/appkit/networks"
+import { env } from "@/env"
 
-createAppKit({
-  adapters: [ethersAdapter, solanaWeb3JsAdapter, bitcoinAdapter, tonAdapter],
-  metadata,
+// Wallets check that the metadata URL matches the page, so it has to follow
+// whatever origin the app is served from. This module also runs during
+// server rendering, where no wallet connects.
+const origin = typeof window === "undefined" ? "" : window.location.origin
+
+const networks = [mainnet, arbitrum, sepolia, solana, solanaTestnet] as [
+  AppKitNetwork,
+  ...AppKitNetwork[],
+]
+
+export const appKit = createAppKit({
+  adapters: [new EthersAdapter(), new SolanaAdapter()],
+  metadata: {
+    name: "Vecrow",
+    description:
+      "Vecrow is an escrow service for crypto payments, built on NEAR Protocol.",
+    url: origin,
+    icons: [`${origin}/favicon.svg`],
+  },
   networks,
-  projectId,
+  projectId: env.NEXT_PUBLIC_REOWN_PROJECT_ID,
   features: {
-    analytics: true, // Optional - defaults to your Cloud configuration
+    analytics: true,
     socials: false,
     email: false,
   },
