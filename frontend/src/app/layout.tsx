@@ -4,6 +4,7 @@ import { cn } from "@/utils"
 import { rootMetadata } from "./metadata"
 import "./globals.css"
 import { AppKitContext } from "@/context/appkit"
+import { NearProvider } from "@/context/near"
 
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-sans" })
 const fontMono = Geist_Mono({
@@ -31,7 +32,9 @@ export default function RootLayout({
     >
       <body>
         <ThemeProvider>
-          <AppKitContext>{children}</AppKitContext>
+          <AppKitContext>
+            <NearProvider>{children}</NearProvider>
+          </AppKitContext>
         </ThemeProvider>
       </body>
     </html>

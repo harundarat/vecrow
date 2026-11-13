@@ -5,9 +5,11 @@ import { Separator } from "@/components/ui/separator"
 import { useAppKit } from "@reown/appkit/react"
 import Image from "next/image"
 import Link from "next/link"
+import { useNearWallet } from "@/context/near"
 
 export default function Page() {
   const { open } = useAppKit()
+  const { accountId, connect } = useNearWallet()
 
   return (
     <main className="mx-auto mt-auto flex min-h-svh max-w-xl flex-col justify-center gap-6 p-4 py-6">
@@ -20,7 +22,8 @@ export default function Page() {
       </div>
       <div className="grid grid-cols-2 gap-2">
         <WalletCard
-          label="Near Wallets"
+          onClick={connect}
+          label={accountId || "Near Wallets"}
           iconUrls={["/crypto-icons/near-protocol.png"]}
         />
         <WalletCard
