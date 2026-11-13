@@ -22,6 +22,7 @@ import { InvitationSection } from "./invitation-section"
 import { JoinSection } from "./join-section"
 import { JoinedSection } from "./joined-section"
 import { LinkSection } from "./link-section"
+import { MilestoneActions } from "./milestone-actions"
 import { OnChainDone, OnChainProgress } from "./on-chain-section"
 import { ReviewSection } from "./review-section"
 
@@ -167,7 +168,21 @@ function EscrowView({
       )}
       {creator && status === "Open" && <LinkSection link={escrow.link} open />}
 
-      <MilestonesCard escrow={escrow} />
+      <MilestonesCard
+        escrow={escrow}
+        actions={
+          status === "Funded" && approverActs
+            ? (milestone) =>
+                milestone.status === "Submitted" && (
+                  <MilestoneActions
+                    escrow={escrow}
+                    milestone={milestone}
+                    onDone={reload}
+                  />
+                )
+            : undefined
+        }
+      />
       <PartiesCard escrow={escrow} />
 
       {!creator && !recovery && status === "Open" && (
