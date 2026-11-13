@@ -441,3 +441,42 @@ func TestSession_RecoveryIsCappedBySessionTTL(t *testing.T) {
 		t.Fatalf("Create = %+v, %v", wallet, err)
 	}
 }
+
+// After recovery the user links a new wallet; it then logs in like any
+// wallet, with a full session of the same account (R-22).
+func TestEmailLogin_WalletLinkedInRecoveryLogsInNormally(t *testing.T) {
+	ctx := context.Background()
+	f := newEmailLoginFixture()
+	id := f.accounts.add("alice", testWallet)
+	f.accounts.setEmail(id, "alice@example.com")
+	if err := f.svc.RequestCode(ctx, "alice@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := f.svc.Verify(ctx, "alice@example.com", lastCode(t, f.mailer, "alice@example.com"))
+	if err != nil || !recovered.Session.Recovery {
+		t.Fatalf("recovery login = %+v, %v", recovered, err)
+	}
+
+	nonces := nonceMap{}
+	proof := func(w domain.Wallet, b byte) auth.Proof {
+		v := nonceValue(b)
+		nonces[v] = domain.Nonce{Value: v, Wallet: w, Message: "sign me"}
+		return auth.Proof{Nonce: v, Signature: "sig"}
+	}
+	otps := auth.NewOTPService(f.otps, f.limiter, f.mailer, auth.OTPConfig{RateLimit: 3, RateWindow: time.Hour})
+	accounts := auth.NewAccountService(nonces, &fakeVerifier{}, f.accounts, fakeTx{f.accounts}, otps, f.mailer)
+	newWallet := domain.Wallet{Scheme: domain.SchemeNEP413, Address: "alice-new.near"}
+	if _, linked, err := accounts.LinkWallet(ctx, recovered.Session, proof(newWallet, 1)); err != nil || !linked {
+		t.Fatalf("LinkWallet in the recovery session = %v, %v", linked, err)
+	}
+
+	login := auth.NewLoginService(nonces, &fakeVerifier{}, f.accounts, fakeTx{f.accounts},
+		auth.NewSessionService(f.sessions, 24*time.Hour))
+	res, err := login.Login(ctx, proof(newWallet, 2))
+	if err != nil {
+		t.Fatalf("Login with the new wallet: %v", err)
+	}
+	if res.Account.ID != id || res.NewAccount || res.Session.Recovery || res.Token == "" {
+		t.Fatalf("login with the new wallet = %+v", res)
+	}
+}
