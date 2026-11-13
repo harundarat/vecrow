@@ -200,7 +200,10 @@ function EscrowView({
         <LinkSection link={escrow.link} open={false} />
       )}
       {creator && CANCELLABLE.has(status) && (
-        <CancelSection escrowId={escrow.id} onDone={reload} />
+        <CancelSection escrow={escrow} asApprover={false} onDone={reload} />
+      )}
+      {status === "Created" && approverActs && (
+        <CancelSection escrow={escrow} asApprover onDone={reload} />
       )}
     </>
   )

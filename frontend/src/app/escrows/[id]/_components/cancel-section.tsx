@@ -15,20 +15,42 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/context/auth"
-import { cancelEscrow } from "@/lib/api/escrow"
+import {
+  useApproverAction,
+  type ApproverStep,
+} from "@/hooks/use-approver-action"
+import {
+  cancelAsApprover,
+  cancelEscrow,
+  type EscrowDetail,
+} from "@/lib/api/escrow"
+import { cancelMessage } from "@/lib/approver-action"
 import { describeWalletError } from "@/lib/wallet-errors"
 
-/** The creator cancels an escrow that is not on-chain yet. */
+const STEP_TEXT: Record<ApproverStep, string> = {
+  connecting: "Connect your approver wallet…",
+  signing: "Sign the cancellation in your wallet. It is free.",
+  sending: "Cancelling…",
+}
+
+/**
+ * Cancels an escrow before it is paid in: the creator while it is not
+ * on-chain, the approver with a signature once it is Created.
+ */
 export function CancelSection({
-  escrowId,
+  escrow,
+  asApprover,
   onDone,
 }: {
-  escrowId: string
+  escrow: EscrowDetail
+  asApprover: boolean
   onDone: () => void
 }) {
   const { request } = useAuth()
+  const act = useApproverAction(escrow)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [step, setStep] = useState<ApproverStep | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   async function cancel() {
@@ -36,21 +58,37 @@ export function CancelSection({
     setBusy(true)
     setError(null)
     try {
-      await cancelEscrow(request, escrowId)
+      if (asApprover) {
+        await act(
+          (nonce, deadline) =>
+            cancelMessage(escrow.contract_id, escrow.id, nonce, deadline),
+          (signature) => cancelAsApprover(escrow.id, signature),
+          setStep
+        )
+      } else {
+        await cancelEscrow(request, escrow.id)
+      }
       setOpen(false)
       onDone()
     } catch (err) {
       setError(describeWalletError(err))
       setOpen(false)
+      // Shows the escrow as it is now, in case the cancellation went through.
+      onDone()
     } finally {
       setBusy(false)
+      setStep(null)
     }
   }
 
   return (
     <FormSection
       title="Cancel escrow"
-      description="Nothing is on-chain yet, so cancelling is free. Nobody can join after this."
+      description={
+        asApprover
+          ? "Nothing is paid in yet, so cancelling costs nothing. You sign it with the approver wallet."
+          : "Nothing is on-chain yet, so cancelling is free. Nobody can join after this."
+      }
     >
       <FeedbackMessage
         feedback={error ? { kind: "error", message: error } : null}
@@ -73,9 +111,16 @@ export function CancelSection({
           <AlertDialogHeader>
             <AlertDialogTitle>Cancel this escrow?</AlertDialogTitle>
             <AlertDialogDescription>
-              Nobody can join it after this. This cannot be undone.
+              {asApprover
+                ? "Nobody can pay into it after this. If you already sent a payment, wait for it to arrive instead. This cannot be undone."
+                : "Nobody can join it after this. This cannot be undone."}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {step && (
+            <p aria-live="polite" className="text-sm text-muted-foreground">
+              {STEP_TEXT[step]}
+            </p>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Keep escrow</AlertDialogCancel>
             <Button
