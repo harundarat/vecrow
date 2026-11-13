@@ -297,7 +297,8 @@ sending and restored if the transfer fails again.
 - [x] `retry_payout` after registration sends the exact pending amount.
 - [x] Two consecutive `retry_payout` calls do not pay twice.
 - [x] The backend registers the split recipients and `refund_account` before it calls `create_escrow`.
-- [ ] Pending payouts appear in `GET /escrows/:id` and in the CSV export.
+- [x] Pending payouts appear in `GET /escrows/:id`.
+- [ ] Pending payouts appear in the CSV export (R-12).
 - [x] Freelancer and client still need a NEAR balance of 0.
 
 *Partial:* the contract side is done: pending payouts are returned by `get_escrow`, and a
