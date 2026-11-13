@@ -24,6 +24,15 @@ export default function Page() {
       <Suspense fallback={<WalletGridFallback />}>
         <SignInPanel />
       </Suspense>
+      <p className="text-sm text-muted-foreground">
+        <Link
+          href="/sign-in/email"
+          className="font-medium text-foreground underline"
+        >
+          Lost your wallet?
+        </Link>{" "}
+        Sign in with the verified email on your account and link a new wallet.
+      </p>
       <Separator className="opacity-50" />
       <p className="text-sm text-muted-foreground">
         By signing in or creating an account, you agree to the{" "}

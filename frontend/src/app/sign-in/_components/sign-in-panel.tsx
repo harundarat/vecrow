@@ -55,7 +55,7 @@ type Step = "connecting" | "signing" | "redirecting"
 export function SignInPanel() {
   const router = useRouter()
   const next = safeNextPath(useSearchParams().get("next"))
-  const { status, signIn } = useAuth()
+  const { status, recovery, signIn } = useAuth()
   const signers: Record<WalletChain, WalletSigner> = {
     near: useWalletSigner("near"),
     solana: useWalletSigner("solana"),
@@ -70,9 +70,12 @@ export function SignInPanel() {
     message: string
   } | null>(null)
 
+  // A recovery session stays here so the visitor can sign in with a wallet.
+  const signedIn = status === "authenticated" && !recovery
+
   useEffect(() => {
-    if (status === "authenticated") router.replace(next)
-  }, [status, next, router])
+    if (signedIn) router.replace(next)
+  }, [signedIn, next, router])
 
   async function handleSelect(chain: WalletChain) {
     if (active) return
@@ -103,6 +106,12 @@ export function SignInPanel() {
 
   return (
     <div className="flex flex-col gap-4">
+      {status === "authenticated" && recovery && (
+        <p className="rounded-2xl bg-primary/10 p-4 text-sm">
+          You are in a recovery session. Sign in with a wallet linked to your
+          account to create and approve escrows again.
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-2">
         {WALLETS.map(({ chain, label, icons }) => {
           const address = signers[chain].address
