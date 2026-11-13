@@ -10,8 +10,8 @@ import {
   InputGroupText,
 } from "@/components/ui/input-group"
 import { MAX_MILESTONES, type MilestonesCheck } from "@/lib/escrow-rules"
-import { FormSection } from "./form-section"
-import { newRowKey } from "./row-key"
+import { FormSection } from "@/components/form-section"
+import { newRowKey } from "@/lib/row-key"
 
 export type MilestoneRow = { key: number; amount: string }
 

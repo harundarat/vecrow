@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select"
 import type { Wallet } from "@/lib/api/auth"
 import { shortenAddress, WALLET_SCHEME_LABEL } from "@/lib/format"
-import { FormSection } from "./form-section"
+import { FormSection } from "@/components/form-section"
 
 export function walletLabel(wallet: Wallet) {
   return `${WALLET_SCHEME_LABEL[wallet.scheme] ?? wallet.scheme} · ${shortenAddress(wallet.address)}`

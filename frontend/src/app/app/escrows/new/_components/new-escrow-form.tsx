@@ -4,6 +4,12 @@ import Link from "next/link"
 import { useRef, useState } from "react"
 import { LoaderCircle } from "lucide-react"
 import { FeedbackMessage } from "@/components/feedback-message"
+import {
+  followAccount,
+  splitIsValid,
+  splitShares,
+  type SplitRow,
+} from "@/components/split-fields"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
   Field,
@@ -22,24 +28,26 @@ import {
   type CreatedEscrow,
   type CreateEscrowRequest,
   type CreatorRole,
-  type InvitationInput,
 } from "@/lib/api/escrow"
 import {
   checkMilestones,
   checkSplit,
-  emailError,
   nearAccountError,
-  usernameError,
-  walletAddressError,
 } from "@/lib/escrow-rules"
+import {
+  invitationBody,
+  invitationError,
+  NO_INVITE,
+  type InviteState,
+} from "@/lib/invitation"
 import { describeWalletError } from "@/lib/wallet-errors"
 import { ClientFields } from "./client-fields"
 import { EscrowSummary } from "./escrow-summary"
-import { FormSection } from "./form-section"
-import { FreelancerFields, type SplitRow } from "./freelancer-fields"
-import { InvitationFields, type InviteState } from "./invitation-fields"
+import { FormSection } from "@/components/form-section"
+import { FreelancerFields } from "./freelancer-fields"
+import { InvitationFields } from "./invitation-fields"
 import { MilestonesFields, type MilestoneRow } from "./milestones-fields"
-import { newRowKey } from "./row-key"
+import { newRowKey } from "@/lib/row-key"
 
 const ROLES: Array<{ value: CreatorRole; title: string; description: string }> =
   [
@@ -84,11 +92,7 @@ export function NewEscrowForm({
   ])
   const [approverId, setApproverId] = useState(defaultApprover?.id ?? "")
   const [refundAccount, setRefundAccount] = useState(defaultNear)
-  const [invite, setInvite] = useState<InviteState>({
-    kind: "none",
-    value: "",
-    scheme: "nep413",
-  })
+  const [invite, setInvite] = useState<InviteState>(NO_INVITE)
   const [showErrors, setShowErrors] = useState(false)
   const [step, setStep] = useState<Step | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -101,10 +105,7 @@ export function NewEscrowForm({
   const refundError = role === "client" ? nearAccountError(refundAccount) : null
   const inviteError = invitationError(account, invite)
 
-  const splitValid =
-    !splitCheck.listError &&
-    splitCheck.accountErrors.every((e) => e === null) &&
-    splitCheck.shareErrors.every((e) => e === null)
+  const splitValid = splitIsValid(splitCheck)
   const roleValid =
     role === "freelancer"
       ? Boolean(freelancer) && splitValid
@@ -116,13 +117,7 @@ export function NewEscrowForm({
     !inviteError
 
   function changeFreelancer(next: string) {
-    // Keep the first recipient in step with the account while it still
-    // matches it.
-    setSplit((rows) =>
-      rows.map((row, i) =>
-        i === 0 && row.account === freelancer ? { ...row, account: next } : row
-      )
-    )
+    setSplit((rows) => followAccount(rows, freelancer, next))
     setFreelancer(next)
   }
 
@@ -180,10 +175,7 @@ export function NewEscrowForm({
           role,
           milestones: amounts,
           freelancer,
-          split: split.map((row, i) => ({
-            account_id: row.account,
-            bps: splitCheck.bps[i] ?? 0,
-          })),
+          split: splitShares(split, splitCheck),
           invitation,
         }
       } else {
@@ -285,10 +277,7 @@ export function NewEscrowForm({
         amounts={milestoneCheck.amounts}
         split={
           role === "freelancer" && splitValid
-            ? split.map((row, i) => ({
-                account_id: row.account,
-                bps: splitCheck.bps[i] ?? 0,
-              }))
+            ? splitShares(split, splitCheck)
             : null
         }
       />
@@ -321,45 +310,4 @@ export function NewEscrowForm({
       </div>
     </form>
   )
-}
-
-function invitationBody(invite: InviteState): InvitationInput | undefined {
-  const value = invite.value.trim()
-  switch (invite.kind) {
-    case "username":
-      return { username: value.toLowerCase() }
-    case "email":
-      return { email: value }
-    case "wallet":
-      return { wallet: { scheme: invite.scheme, address: value } }
-    default:
-      return undefined
-  }
-}
-
-function invitationError(account: Account, invite: InviteState): string | null {
-  const value = invite.value.trim()
-  const own = "That is your own account. Invite the other party."
-  switch (invite.kind) {
-    case "username":
-      if (usernameError(value)) return usernameError(value)
-      return value.toLowerCase() === account.username ? own : null
-    case "email":
-      if (emailError(value)) return emailError(value)
-      return value.toLowerCase() === account.email?.toLowerCase() ? own : null
-    case "wallet": {
-      const addressError = walletAddressError(invite.scheme, value)
-      if (addressError) return addressError
-      const mine = account.wallets.some(
-        (w) =>
-          w.scheme === invite.scheme &&
-          (w.scheme === "eip191"
-            ? w.address.toLowerCase() === value.toLowerCase()
-            : w.address === value)
-      )
-      return mine ? own : null
-    }
-    default:
-      return null
-  }
 }

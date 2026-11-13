@@ -3,7 +3,7 @@ import { formatPercent } from "@/lib/escrow-rules"
 import { PLATFORM_FEE_BPS, releasePlan, type Share } from "@/lib/payout"
 import { formatUsdc, sumUsdc } from "@/lib/usdc"
 import { cn } from "@/utils"
-import { FormSection } from "./form-section"
+import { FormSection } from "@/components/form-section"
 
 /**
  * The totals, the platform fee and what each recipient gets, worked out per
