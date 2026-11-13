@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { EscrowOverview } from "./_components/escrow-overview"
+import { EscrowPage } from "./_components/escrow-page"
 
 export const metadata: Metadata = {
   title: "Escrow - Vecrow",
@@ -11,5 +11,5 @@ export default async function Page({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  return <EscrowOverview id={id} />
+  return <EscrowPage id={id} />
 }
