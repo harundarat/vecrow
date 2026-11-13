@@ -5,14 +5,20 @@ import {
 } from "@/components/escrow-status-badge"
 import { FormSection } from "@/components/form-section"
 import { Badge } from "@/components/ui/badge"
-import type { Approver, EscrowDetail, MilestoneStatus } from "@/lib/api/escrow"
+import type {
+  Approver,
+  EscrowDetail,
+  Milestone,
+  MilestoneStatus,
+} from "@/lib/api/escrow"
 import { formatPercent } from "@/lib/escrow-rules"
 import {
   ESCROW_ROLE_LABEL,
   formatDate,
+  formatTime,
   WALLET_SCHEME_LABEL,
 } from "@/lib/format"
-import { mulBps } from "@/lib/payout"
+import { mulBps, releasePlan } from "@/lib/payout"
 import { formatUsdc, sumUsdc } from "@/lib/usdc"
 import { cn } from "@/utils"
 
@@ -72,7 +78,14 @@ export function EscrowWarnings({
   )
 }
 
-export function MilestonesCard({ escrow }: { escrow: EscrowDetail }) {
+export function MilestonesCard({
+  escrow,
+  actions,
+}: {
+  escrow: EscrowDetail
+  /** Extra controls under a milestone, e.g. the approver's buttons. */
+  actions?: (milestone: Milestone) => React.ReactNode
+}) {
   const fee = sumUsdc(
     escrow.milestones.map((m) =>
       mulBps(BigInt(m.amount), escrow.fee_bps).toString()
@@ -82,19 +95,23 @@ export function MilestonesCard({ escrow }: { escrow: EscrowDetail }) {
     <FormSection title="Milestones">
       <ol className="flex flex-col divide-y rounded-xl border">
         {escrow.milestones.map((milestone) => (
-          <li
-            key={milestone.index}
-            className="flex items-center justify-between gap-3 p-3 text-sm"
-          >
-            <span>Milestone {milestone.index + 1}</span>
-            <span className="flex items-center gap-3">
-              <span className="text-muted-foreground">
-                {MILESTONE_STATUS_LABEL[milestone.status] ?? milestone.status}
+          <li key={milestone.index} className="flex flex-col gap-3 p-3 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-medium">
+                Milestone {milestone.index + 1}
               </span>
-              <span className="tabular-nums">
-                {formatUsdc(milestone.amount)} USDC
+              <span className="flex items-center gap-3">
+                <span className="text-muted-foreground">
+                  {MILESTONE_STATUS_LABEL[milestone.status] ?? milestone.status}
+                </span>
+                <span className="tabular-nums">
+                  {formatUsdc(milestone.amount)} USDC
+                </span>
               </span>
-            </span>
+            </div>
+            <PayoutBreakdown escrow={escrow} amount={milestone.amount} />
+            <MilestoneNotes escrow={escrow} milestone={milestone} />
+            {actions?.(milestone)}
           </li>
         ))}
       </ol>
@@ -103,6 +120,93 @@ export function MilestonesCard({ escrow }: { escrow: EscrowDetail }) {
         {formatUsdc(fee)} USDC in total.
       </p>
     </FormSection>
+  )
+}
+
+/** Who gets what when the milestone is released, exactly as the contract pays. */
+function PayoutBreakdown({
+  escrow,
+  amount,
+}: {
+  escrow: EscrowDetail
+  amount: string
+}) {
+  const split = escrow.freelancer?.split ?? []
+  const plan = releasePlan(amount, escrow.fee_bps, split)
+  const rows =
+    split.length > 0
+      ? split.map((share, i) => ({
+          label: share.account_id,
+          amount: plan.shares[i],
+          mono: true,
+        }))
+      : [
+          {
+            label: "Freelancer",
+            amount: (BigInt(amount) - BigInt(plan.fee)).toString(),
+            mono: false,
+          },
+        ]
+  return (
+    <ul
+      aria-label="Payout on release"
+      className="flex flex-col gap-1 text-xs text-muted-foreground"
+    >
+      {rows.map((row) => (
+        <li key={row.label} className="flex justify-between gap-3">
+          <span className={cn("min-w-0 truncate", row.mono && "font-mono")}>
+            {row.label}
+          </span>
+          <span className="shrink-0 tabular-nums">
+            {formatUsdc(row.amount)} USDC
+          </span>
+        </li>
+      ))}
+      <li className="flex justify-between gap-3">
+        <span>Platform fee</span>
+        <span className="shrink-0 tabular-nums">
+          {formatUsdc(plan.fee)} USDC
+        </span>
+      </li>
+    </ul>
+  )
+}
+
+function MilestoneNotes({
+  escrow,
+  milestone,
+}: {
+  escrow: EscrowDetail
+  milestone: Milestone
+}) {
+  const notes = escrow.revision_notes.filter(
+    (note) => note.milestone === milestone.index
+  )
+  const autoRelease =
+    milestone.status === "Submitted" && milestone.auto_release_at_ms
+      ? new Date(milestone.auto_release_at_ms).toISOString()
+      : null
+  if (notes.length === 0 && !autoRelease) return null
+  return (
+    <div className="flex flex-col gap-2 text-xs">
+      {notes.map((note) => (
+        <p
+          key={note.tx_hash || note.created_at}
+          className="rounded-lg bg-muted p-2 break-words whitespace-pre-line"
+        >
+          <span className="text-muted-foreground">
+            Revision asked on {formatDate(note.created_at)}:{" "}
+          </span>
+          {note.reason}
+        </p>
+      ))}
+      {autoRelease && (
+        <p className="text-muted-foreground">
+          Released by itself on {formatDate(autoRelease)},{" "}
+          {formatTime(autoRelease)} unless the client asks for a revision.
+        </p>
+      )}
+    </div>
   )
 }
 
