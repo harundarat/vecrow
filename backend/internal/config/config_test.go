@@ -23,7 +23,8 @@ var configKeys = []string{
 	"APP_URL", "RELAYER_ACCOUNT_ID", "RELAYER_PRIVATE_KEY", "RELAYER_MAX_GAS_TGAS", "STORAGE_ACCOUNT_ID",
 	"STORAGE_PRIVATE_KEY", "ONECLICK_URL", "ONECLICK_API_KEY", "ONECLICK_SLIPPAGE_BPS", "ONECLICK_QUOTE_TTL",
 	"ONECLICK_WATCH_GRACE", "ONECLICK_REFRESH_AFTER", "ONECLICK_TOKENS_TTL", "JOB_SYNC_INTERVAL",
-	"JOB_FUNDING_INTERVAL", "JOB_BATCH_SIZE", "JOB_LEASE_TTL",
+	"JOB_FUNDING_INTERVAL", "JOB_BATCH_SIZE", "JOB_LEASE_TTL", "SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME",
+	"SMTP_PASSWORD", "SMTP_TLS", "SMTP_TIMEOUT", "SMTP_FROM",
 }
 
 func clearEnv(t *testing.T) {
@@ -232,6 +233,60 @@ func TestLoad_RejectsInvalidEscrowSettings(t *testing.T) {
 			t.Setenv(key, bad)
 			if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), key) {
 				t.Fatalf("error = %v, want %s error", err, key)
+			}
+		})
+	}
+}
+
+func TestLoad_Mail(t *testing.T) {
+	setRequired(t)
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Mail.SMTPHost != "" || cfg.Mail.SMTPPort != 587 || cfg.Mail.SMTPTLS != "starttls" || cfg.Mail.SMTPTimeout != 10*time.Second {
+		t.Errorf("mail defaults = %+v", cfg.Mail)
+	}
+	if err := cfg.RequireMail(); err != nil {
+		t.Errorf("RequireMail in development: %v", err)
+	}
+
+	t.Setenv("APP_ENV", "production")
+	cfg, err = config.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if err := cfg.RequireMail(); err == nil {
+		t.Error("RequireMail accepted production without SMTP_HOST")
+	}
+
+	t.Setenv("SMTP_HOST", "smtp.example.com")
+	t.Setenv("SMTP_FROM", "Vecrow <no-reply@example.com>")
+	t.Setenv("SMTP_USERNAME", "vecrow")
+	t.Setenv("SMTP_PASSWORD", "not-a-real-password")
+	t.Setenv("SMTP_PORT", "465")
+	t.Setenv("SMTP_TLS", "tls")
+	cfg, err = config.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if err := cfg.RequireMail(); err != nil {
+		t.Errorf("RequireMail: %v", err)
+	}
+	if cfg.Mail.SMTPPort != 465 || cfg.Mail.SMTPTLS != "tls" || cfg.Mail.SMTPPassword != "not-a-real-password" {
+		t.Errorf("mail = %+v", cfg.Mail)
+	}
+
+	for key, val := range map[string]string{
+		"SMTP_FROM":    "",
+		"SMTP_PORT":    "0",
+		"SMTP_TLS":     "ssl",
+		"SMTP_TIMEOUT": "0s",
+	} {
+		t.Run(key, func(t *testing.T) {
+			t.Setenv(key, val)
+			if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), key) {
+				t.Errorf("Load with %s=%q error = %v, want one naming %s", key, val, err, key)
 			}
 		})
 	}

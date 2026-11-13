@@ -37,6 +37,7 @@ type Config struct {
 	Storage   Storage
 	OneClick  OneClick
 	Jobs      Jobs
+	Mail      Mail
 }
 
 type App struct {
@@ -170,6 +171,23 @@ type Jobs struct {
 	LeaseTTL time.Duration `env:"JOB_LEASE_TTL" envDefault:"2m"`
 }
 
+// Mail configures outgoing email: one-time codes and account notifications
+// (R-14, R-22). Used by the api only. Without SMTP_HOST, emails are not sent
+// but logged without their body, which is allowed in development only.
+type Mail struct {
+	SMTPHost string `env:"SMTP_HOST"`
+	SMTPPort int    `env:"SMTP_PORT" envDefault:"587"`
+	// SMTPUsername and SMTPPassword are optional; the password is never logged.
+	SMTPUsername string `env:"SMTP_USERNAME"`
+	SMTPPassword string `env:"SMTP_PASSWORD"`
+	// SMTPTLS is starttls, tls (implicit TLS, usually port 465) or none (a
+	// mail catcher on localhost only).
+	SMTPTLS     string        `env:"SMTP_TLS" envDefault:"starttls"`
+	SMTPTimeout time.Duration `env:"SMTP_TIMEOUT" envDefault:"10s"`
+	// From is the sender: an address, or "Name <address>".
+	From string `env:"SMTP_FROM"`
+}
+
 // Load reads an optional .env file from the working directory, then parses
 // the environment. Variables already set in the environment win over .env.
 func Load() (Config, error) {
@@ -295,6 +313,22 @@ func (c Config) validate() error {
 	if c.Jobs.BatchSize < 1 {
 		errs = append(errs, errors.New("JOB_BATCH_SIZE must be >= 1"))
 	}
+	if c.Mail.SMTPHost != "" {
+		if c.Mail.From == "" {
+			errs = append(errs, errors.New("SMTP_FROM is required with SMTP_HOST"))
+		}
+		if c.Mail.SMTPPort < 1 || c.Mail.SMTPPort > 65535 {
+			errs = append(errs, fmt.Errorf("SMTP_PORT must be between 1 and 65535, got %d", c.Mail.SMTPPort))
+		}
+		if c.Mail.SMTPTimeout <= 0 {
+			errs = append(errs, fmt.Errorf("SMTP_TIMEOUT must be > 0, got %s", c.Mail.SMTPTimeout))
+		}
+		switch strings.ToLower(c.Mail.SMTPTLS) {
+		case "starttls", "tls", "none":
+		default:
+			errs = append(errs, fmt.Errorf("SMTP_TLS must be starttls, tls or none, got %q", c.Mail.SMTPTLS))
+		}
+	}
 	return errors.Join(errs...)
 }
 
@@ -307,6 +341,15 @@ const (
 
 func isHTTPURL(s string) bool {
 	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
+// RequireMail reports whether the api can send email: an SMTP server is
+// required in production, where emails must not be dropped.
+func (c Config) RequireMail() error {
+	if c.IsProduction() && c.Mail.SMTPHost == "" {
+		return errors.New("SMTP_HOST and SMTP_FROM are required in production")
+	}
+	return nil
 }
 
 // RequireEscrow reports the escrow settings the api and worker need that are

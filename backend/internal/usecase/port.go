@@ -11,3 +11,9 @@ import "context"
 type Transactor interface {
 	WithinTx(ctx context.Context, fn func(ctx context.Context) error) error
 }
+
+// Mailer sends a plain-text email. It may send in the background: a nil error
+// means the email was accepted for delivery, not that it arrived.
+type Mailer interface {
+	Send(ctx context.Context, to, subject, body string) error
+}
