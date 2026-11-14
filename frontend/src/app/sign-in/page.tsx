@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { Suspense } from "react"
 import { VecrowLogoWordmark } from "@/assets/vecrow-logo-wordmark"
+import { PageHeader } from "@/components/page-header"
 import { Separator } from "@/components/ui/separator"
 import { SignInPanel } from "./_components/sign-in-panel"
 
@@ -15,15 +16,22 @@ export default function Page() {
       <Link href="/" aria-label="Vecrow home" className="self-start">
         <VecrowLogoWordmark className="w-32" />
       </Link>
-      <div>
-        <h1 className="text-2xl font-medium">Sign in or create an account</h1>
-        <p className="mt-1 text-sm font-medium text-muted-foreground">
-          Use any Web3 wallet you own. Your first sign-in creates your account.
-        </p>
-      </div>
+      <PageHeader
+        title="Sign in or create an account"
+        description="Use any Web3 wallet you own. Your first sign-in creates your account."
+      />
       <Suspense fallback={<WalletGridFallback />}>
         <SignInPanel />
       </Suspense>
+      <p className="text-sm text-muted-foreground">
+        <Link
+          href="/sign-in/email"
+          className="font-medium text-foreground underline"
+        >
+          Lost your wallet?
+        </Link>{" "}
+        Sign in with the verified email on your account and link a new wallet.
+      </p>
       <Separator className="opacity-50" />
       <p className="text-sm text-muted-foreground">
         By signing in or creating an account, you agree to the{" "}

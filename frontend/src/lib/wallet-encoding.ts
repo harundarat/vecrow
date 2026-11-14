@@ -6,7 +6,9 @@ import {
   getBytes,
   hexlify,
   isHexString,
+  sha256,
   toBeArray,
+  toUtf8Bytes,
   zeroPadValue,
 } from "ethers"
 
@@ -45,6 +47,12 @@ export function base64ToBytes(value: string): Uint8Array {
   return decodeBase64(value)
 }
 
+/** Standard or URL-safe base64, with or without padding. */
+export function looseBase64ToBytes(value: string): Uint8Array {
+  const standard = value.replace(/-/g, "+").replace(/_/g, "/")
+  return base64ToBytes(standard.padEnd(Math.ceil(standard.length / 4) * 4, "="))
+}
+
 /** `personal_sign` result as the backend expects it: `0x` + 65 bytes, lowercase. */
 export function toEip191Signature(signature: string): string {
   const hex = signature.startsWith("0x") ? signature : `0x${signature}`
@@ -69,6 +77,11 @@ export function nep413Nonce(hexNonce: string): Uint8Array {
     throw new Error("NEP-413 nonce must be 32 bytes of hex")
   }
   return getBytes(hex)
+}
+
+/** The NEP-413 nonce of signed terms: sha256 of their text, as lowercase hex. */
+export function termsNonce(message: string): string {
+  return sha256(toUtf8Bytes(message)).slice(2)
 }
 
 export type Nep413Proof = { signature: string; public_key: string }

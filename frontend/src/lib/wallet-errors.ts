@@ -1,4 +1,5 @@
 import { ApiError } from "./api/client"
+import { describeApiError } from "./api/errors"
 
 export class WalletCancelledError extends Error {
   constructor() {
@@ -7,15 +8,29 @@ export class WalletCancelledError extends Error {
   }
 }
 
+/** The wallet cannot sign actions that the relayer pays gas for. */
+export class DelegateUnsupportedError extends Error {
+  constructor(wallet: string) {
+    super(
+      `${wallet} cannot sign gas-free actions. Connect another NEAR wallet with the same account.`
+    )
+    this.name = "DelegateUnsupportedError"
+  }
+}
+
 const REJECTED = /reject|denied|declin|cancel/i
 
 /** Turns errors from wallets and the API into a sentence for the user. */
 export function describeWalletError(err: unknown): string {
-  if (err instanceof WalletCancelledError) return err.message
-  if (err instanceof ApiError) return err.message
+  if (
+    err instanceof WalletCancelledError ||
+    err instanceof DelegateUnsupportedError
+  ) {
+    return err.message
+  }
+  if (err instanceof ApiError) return describeApiError(err)
   if (isUserRejection(err)) return "The request was rejected in your wallet."
-  if (err instanceof Error && err.message) return err.message
-  return "Something went wrong. Please try again."
+  return describeApiError(err)
 }
 
 function isUserRejection(err: unknown): boolean {

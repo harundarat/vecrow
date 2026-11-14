@@ -74,7 +74,7 @@ their NEAR account and split, and approve it as the client.
 .
 ├── contracts/   # Rust, near-sdk — escrow contract and tests
 ├── backend/     # Go — REST API, relayer, 1Click watcher, jobs
-├── frontend/    # React + Vite — escrow pages, dashboard, account pages
+├── frontend/    # Next.js — landing, escrow pages, dashboard, account pages
 └── docs/        # spec, architecture, decisions
 ```
 
@@ -104,7 +104,7 @@ their NEAR account and split, and approve it as the client.
   (without default features it skips Ledger support, which needs libudev)
 - Go 1.27+ (backend), with [goose](https://github.com/pressly/goose) for migrations and
   [sqlc](https://sqlc.dev) for query code generation
-- Node.js (frontend)
+- [Bun](https://bun.sh) (frontend; tested with 1.4)
 - PostgreSQL, Redis and RabbitMQ (or Docker, to run them with `docker compose`)
 - A NEAR testnet account for the relayer and backend
 
@@ -112,8 +112,9 @@ their NEAR account and split, and approve it as the client.
 
 ### Configuration
 
-Copy `.env.example` to `.env` in `backend/` and `frontend/` and fill in the values.
-Every variable is listed there; no secrets are committed.
+Copy `backend/.env.example` to `backend/.env` and `frontend/env.example` to
+`frontend/.env`, then fill in the values. Every variable is listed there; no secrets are
+committed.
 
 ### Contract
 
@@ -209,10 +210,38 @@ and the CSV export after the approval and after the refund.
 
 ### Frontend
 
+Next.js 16 (App Router, Turbopack) with Bun. It needs the API from the backend section
+above running on `localhost:8080`.
+
 ```sh
 cd frontend
-# TODO: install and run commands
+bun install
+cp env.example .env   # then set NEXT_PUBLIC_REOWN_PROJECT_ID
+bun dev               # http://localhost:5173
+bun run typecheck && bun run lint && bun run build
 ```
+
+| Variable | Meaning |
+| --- | --- |
+| `NEXT_PUBLIC_API_URL` | Base URL of the API, e.g. `http://localhost:8080/api/v1` |
+| `NEXT_PUBLIC_NEAR_NETWORK` | `testnet` or `mainnet`: the network NEAR wallets connect to |
+| `NEXT_PUBLIC_REOWN_PROJECT_ID` | Reown (WalletConnect) project ID for EVM and Solana wallets, from [dashboard.reown.com](https://dashboard.reown.com) |
+
+The variables are checked at startup (`src/env.ts`); a missing one stops `bun dev`.
+
+How it talks to the backend:
+
+- Every call goes to `NEXT_PUBLIC_API_URL`. The backend must allow the frontend's origin
+  (`CORS_ALLOWED_ORIGINS=http://localhost:5173`), sign-in messages are bound to
+  `AUTH_DOMAIN=localhost:5173`, and escrow links point to `APP_URL=http://localhost:5173`.
+- Sign-in: the wallet signs the message the API returns (`/auth/nonce`, then
+  `/auth/verify`); the session token is kept in `localStorage`.
+- Escrow actions are signed in the browser and sent to the API, which relays them
+  on-chain. The freelancer signs NEP-366 delegate actions, so Vecrow pays the gas.
+- Payments go through NEAR Intents 1Click: the API returns a deposit address, and the page
+  polls the payment status.
+
+See [`frontend/README.md`](./frontend/README.md) for the code layout and conventions.
 
 ### Testnet vs mainnet
 

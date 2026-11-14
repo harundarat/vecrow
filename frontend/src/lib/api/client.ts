@@ -20,11 +20,38 @@ export type RequestOptions = {
   signal?: AbortSignal
 }
 
+/** Calls the API as the signed-in account; see `useAuth().request`. */
+export type Requester = <T>(
+  path: string,
+  options?: Omit<RequestOptions, "token">
+) => Promise<T>
+
 export async function apiFetch<T>(
   path: string,
-  { method = "GET", body, token, guestToken, signal }: RequestOptions = {}
+  options: RequestOptions = {}
 ): Promise<T> {
-  const headers: Record<string, string> = { Accept: "application/json" }
+  const res = await send(path, "application/json", options)
+  if (res.status === 204) return undefined as T
+  return (await res.json().catch(() => undefined)) as T
+}
+
+/** A file the API serves as an attachment, such as a CSV export. */
+export async function apiDownload(
+  path: string,
+  options: Omit<RequestOptions, "method" | "body"> = {}
+): Promise<{ blob: Blob; filename: string | null }> {
+  const res = await send(path, "*/*", options)
+  const disposition = res.headers.get("Content-Disposition") ?? ""
+  const filename = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? null
+  return { blob: await res.blob(), filename }
+}
+
+async function send(
+  path: string,
+  accept: string,
+  { method = "GET", body, token, guestToken, signal }: RequestOptions
+): Promise<Response> {
+  const headers: Record<string, string> = { Accept: accept }
   if (body !== undefined) headers["Content-Type"] = "application/json"
   if (token) headers.Authorization = `Bearer ${token}`
   if (guestToken) headers["X-Guest-Token"] = guestToken
@@ -42,10 +69,8 @@ export async function apiFetch<T>(
     throw new ApiError(0, "network_error", "Could not reach the Vecrow server.")
   }
 
-  if (res.status === 204) return undefined as T
-
-  const data: unknown = await res.json().catch(() => undefined)
   if (!res.ok) {
+    const data: unknown = await res.json().catch(() => undefined)
     const error = isErrorEnvelope(data) ? data.error : undefined
     throw new ApiError(
       res.status,
@@ -53,7 +78,7 @@ export async function apiFetch<T>(
       error?.message ?? `Request failed with status ${res.status}.`
     )
   }
-  return data as T
+  return res
 }
 
 type ErrorEnvelope = { error: { code: string; message: string } }

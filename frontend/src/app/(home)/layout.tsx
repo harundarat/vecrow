@@ -1,4 +1,4 @@
-import { cn } from "cn"
+import { cn } from "@/utils"
 import { NavHeader } from "./_components/sections/nav-header"
 import styles from "./landing.module.css"
 

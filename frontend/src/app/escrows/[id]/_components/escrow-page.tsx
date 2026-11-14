@@ -1,0 +1,244 @@
+"use client"
+
+import Link from "next/link"
+import { CircleAlert } from "lucide-react"
+import { VecrowLogoWordmark } from "@/assets/vecrow-logo-wordmark"
+import { EmptyState } from "@/components/empty-state"
+import { EscrowNextStep } from "@/components/escrow-next-step"
+import { FeedbackMessage } from "@/components/feedback-message"
+import { LoadingState } from "@/components/loading-state"
+import { BackLink } from "@/components/page-header"
+import { useAuth } from "@/context/auth"
+import { useEscrowDetail } from "@/hooks/use-escrow-detail"
+import type { useGuestAccess } from "@/hooks/use-guest-access"
+import type { EscrowDetail, EscrowStatus } from "@/lib/api/escrow"
+import { approverView, isFreelancer, viewerRoles } from "@/lib/escrow-viewer"
+import { sameWallet } from "@/lib/guest-access"
+import {
+  EscrowHeader,
+  EscrowWarnings,
+  MilestonesCard,
+  PartiesCard,
+} from "./escrow-details"
+import { CancelSection } from "./cancel-section"
+import {
+  FreelancerMilestoneActions,
+  RefundAllSection,
+} from "./freelancer-actions"
+import { FundingLocked, FundingSection } from "./funding-section"
+import { InvitationSection } from "./invitation-section"
+import { JoinSection } from "./join-section"
+import { JoinedSection } from "./joined-section"
+import { LinkSection } from "./link-section"
+import { MilestoneActions } from "./milestone-actions"
+import { OnChainDone, OnChainProgress } from "./on-chain-section"
+import { PayoutsSection } from "./payouts-section"
+import { ReviewSection } from "./review-section"
+
+const ON_CHAIN = new Set<EscrowStatus>(["Created", "Funded", "Completed"])
+// The creator can change the invitation until the escrow is on-chain, and
+// cancel it until it is approved.
+const INVITATION_EDITABLE = new Set<EscrowStatus>([
+  "Open",
+  "PendingApproval",
+  "Approved",
+])
+const CANCELLABLE = new Set<EscrowStatus>(["Open", "PendingApproval"])
+
+export function EscrowPage({ id }: { id: string }) {
+  const { status } = useAuth()
+  const detail = useEscrowDetail(id)
+  const signedIn = status === "authenticated"
+
+  return (
+    <main className="mx-auto flex min-h-svh w-full max-w-3xl flex-col gap-6 px-4 py-8">
+      <Link
+        href={signedIn ? "/app" : "/"}
+        aria-label="Vecrow"
+        className="self-start"
+      >
+        <VecrowLogoWordmark className="w-28" />
+      </Link>
+      {signedIn && (
+        <BackLink href="/app" className="-mb-2">
+          Escrows
+        </BackLink>
+      )}
+
+      {detail.escrow ? (
+        <EscrowView
+          escrow={detail.escrow}
+          reopened={detail.reopened}
+          guest={detail.guest}
+          reload={detail.reload}
+        />
+      ) : detail.error ? (
+        <EmptyState
+          tone="error"
+          icon={<CircleAlert aria-hidden className="size-6" />}
+          title="Could not open the escrow"
+          description={detail.error}
+        />
+      ) : (
+        <LoadingState label="Loading the escrow" />
+      )}
+    </main>
+  )
+}
+
+function EscrowView({
+  escrow,
+  reopened,
+  guest,
+  reload,
+}: {
+  escrow: EscrowDetail
+  reopened: boolean
+  guest: ReturnType<typeof useGuestAccess>
+  reload: () => void
+}) {
+  const { recovery, account, token } = useAuth()
+  const creator = escrow.viewer.creator
+  const status = escrow.status
+  const access = guest.access
+  const joined =
+    !creator &&
+    access !== null &&
+    escrow.submission !== null &&
+    sameWallet(access.wallet, escrow.submission.wallet)
+  const reviewing =
+    creator && status === "PendingApproval" && escrow.submission !== null
+  const approver = approverView(
+    escrow,
+    access,
+    account,
+    recovery ? null : token
+  )
+  const approverActs = approver.approver && !recovery
+  const fundingAuth = approverActs ? approver.fundingAuth : null
+  const roles = viewerRoles(escrow, access, account, approver.approver)
+  const freelancerActs = roles.includes("freelancer") && !recovery
+  // The export refuses a recovery session, so it falls back to the guest token.
+  const party = creator || roles.length > 0
+  const sessionToken = recovery ? null : token
+  const guestToken = access?.token || null
+  const exportAuth =
+    party && (sessionToken || guestToken)
+      ? { token: sessionToken, guestToken: sessionToken ? null : guestToken }
+      : null
+
+  return (
+    <>
+      <EscrowHeader escrow={escrow} />
+      <EscrowNextStep
+        escrow={escrow}
+        roles={roles}
+        creator={creator}
+        className="rounded-xl border p-3"
+      />
+      {recovery && (
+        <p className="rounded-2xl bg-primary/10 p-4 text-sm">
+          You signed in with an email code, so you can only view this escrow.{" "}
+          <Link
+            href={`/sign-in?next=${encodeURIComponent(`/escrows/${escrow.id}`)}`}
+            className="font-medium underline underline-offset-4"
+          >
+            Sign in with a wallet
+          </Link>
+        </p>
+      )}
+      {reopened && status === "Open" && (
+        <FeedbackMessage
+          feedback={{
+            kind: "error",
+            message:
+              "The contract did not accept the terms, so the escrow is open again. The other party can join again.",
+          }}
+        />
+      )}
+      {reviewing && escrow.submission ? (
+        <ReviewSection
+          escrow={escrow}
+          submission={escrow.submission}
+          onDone={reload}
+        />
+      ) : (
+        <EscrowWarnings warnings={escrow.warnings} />
+      )}
+
+      {joined && (
+        <JoinedSection escrow={escrow} access={access} renew={guest.renew} />
+      )}
+      {status === "Approved" && <OnChainProgress />}
+      {ON_CHAIN.has(status) && <OnChainDone escrow={escrow} />}
+      {(status === "Created" || status === "Funded") && fundingAuth && (
+        <FundingSection escrow={escrow} auth={fundingAuth} onFunded={reload} />
+      )}
+      {status === "Created" && !fundingAuth && (
+        <FundingLocked
+          escrow={escrow}
+          freelancer={isFreelancer(escrow, access, account)}
+          expired={approverActs}
+        />
+      )}
+      {creator && status === "Open" && <LinkSection link={escrow.link} open />}
+
+      <MilestonesCard
+        escrow={escrow}
+        actions={
+          status === "Funded" && (approverActs || freelancerActs)
+            ? (milestone) =>
+                milestone.status === "Submitted"
+                  ? approverActs && (
+                      <MilestoneActions
+                        escrow={escrow}
+                        milestone={milestone}
+                        onDone={reload}
+                      />
+                    )
+                  : (milestone.status === "Pending" ||
+                      milestone.status === "RevisionRequested") &&
+                    freelancerActs && (
+                      <FreelancerMilestoneActions
+                        escrow={escrow}
+                        milestone={milestone}
+                        onDone={reload}
+                      />
+                    )
+            : undefined
+        }
+      />
+      {status === "Funded" && freelancerActs && (
+        <RefundAllSection escrow={escrow} onDone={reload} />
+      )}
+      {(status === "Funded" || status === "Completed") && (
+        <PayoutsSection escrow={escrow} auth={exportAuth} />
+      )}
+      <PartiesCard escrow={escrow} />
+
+      {!creator && !recovery && status === "Open" && (
+        <JoinSection
+          escrow={escrow}
+          rejoin={access !== null}
+          onJoined={guest.save}
+        />
+      )}
+
+      {creator && INVITATION_EDITABLE.has(status) && (
+        <InvitationSection escrow={escrow} onDone={reload} />
+      )}
+      {creator && status !== "Open" && status !== "Cancelled" && (
+        <LinkSection link={escrow.link} open={false} />
+      )}
+      {creator && CANCELLABLE.has(status) && (
+        <CancelSection escrow={escrow} by="creator" onDone={reload} />
+      )}
+      {status === "Created" && approverActs && (
+        <CancelSection escrow={escrow} by="approver" onDone={reload} />
+      )}
+      {status === "Created" && freelancerActs && !approverActs && (
+        <CancelSection escrow={escrow} by="freelancer" onDone={reload} />
+      )}
+    </>
+  )
+}

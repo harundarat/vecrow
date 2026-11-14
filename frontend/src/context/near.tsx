@@ -15,15 +15,20 @@ import {
   useState,
 } from "react"
 import { env } from "@/env"
+import type { DelegateActionRequest } from "@/lib/delegate-action"
+import { DelegateUnsupportedError } from "@/lib/wallet-errors"
 
 type NearContextValue = {
   accountId: string
-  /** Opens the wallet selector and resolves with the connected account ID. */
+  /** Resolves with the connected account ID, opening the wallet selector if none is connected. */
   connect: () => Promise<string>
   disconnect: () => Promise<void>
+  /** Signs with the connected account and rejects a signature from another one. */
   signMessage: (
     params: Omit<SignMessageParams, "network" | "signerId">
   ) => Promise<SignedMessage>
+  /** Signs one delegate action with the connected account; base64 Borsh. */
+  signDelegateAction: (request: DelegateActionRequest) => Promise<string>
 }
 
 const NearContext = createContext<NearContextValue | null>(null)
@@ -64,10 +69,13 @@ export function NearProvider({ children }: React.PropsWithChildren) {
   }, [connector])
 
   const connect = useCallback(async () => {
-    const wallet = await connector.connect()
-    const accounts = await wallet.getAccounts()
-    const id = accounts[0]?.accountId ?? ""
-    setAccountId(id)
+    const connected = await connector.getConnectedWallet().catch(() => null)
+    let id = connected?.accounts[0]?.accountId
+    if (!id) {
+      const wallet = await connector.connect()
+      id = (await wallet.getAccounts())[0]?.accountId
+    }
+    setAccountId(id ?? "")
     if (!id) throw new Error("The NEAR wallet returned no account.")
     return id
   }, [connector])
@@ -80,18 +88,45 @@ export function NearProvider({ children }: React.PropsWithChildren) {
   const signMessage = useCallback<NearContextValue["signMessage"]>(
     async (params) => {
       const { wallet, accounts } = await connector.getConnectedWallet()
-      return wallet.signMessage({
+      const signerId = accounts[0]?.accountId
+      const signed = await wallet.signMessage({
         ...params,
+        network: connector.network,
+        signerId,
+      })
+      if (signerId && signed.accountId && signed.accountId !== signerId) {
+        throw new Error(
+          `The wallet signed as ${signed.accountId}, not ${signerId}.`
+        )
+      }
+      return signed
+    },
+    [connector]
+  )
+
+  const signDelegateAction = useCallback<
+    NearContextValue["signDelegateAction"]
+  >(
+    async (request) => {
+      const { wallet, accounts } = await connector.getConnectedWallet()
+      if (!wallet.manifest.features?.signDelegateActions) {
+        throw new DelegateUnsupportedError(wallet.manifest.name)
+      }
+      const { signedDelegateActions } = await wallet.signDelegateActions({
+        delegateActions: [request],
         network: connector.network,
         signerId: accounts[0]?.accountId,
       })
+      const signed = signedDelegateActions?.[0]
+      if (!signed) throw new Error("The NEAR wallet returned no signature.")
+      return signed
     },
     [connector]
   )
 
   const value = useMemo(
-    () => ({ accountId, connect, disconnect, signMessage }),
-    [accountId, connect, disconnect, signMessage]
+    () => ({ accountId, connect, disconnect, signMessage, signDelegateAction }),
+    [accountId, connect, disconnect, signMessage, signDelegateAction]
   )
 
   return <NearContext.Provider value={value}>{children}</NearContext.Provider>
