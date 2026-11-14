@@ -3,7 +3,7 @@ import Link from "next/link"
 import { ArrowUpRight, CodeXml, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { VecrowLogoWordmark } from "@/assets/vecrow-logo-wordmark"
-import { DOCS_URL, REPOSITORY_URL as repository } from "../links"
+import { CONTRACTS_URL, DOCS_URL, REPOSITORY_URL as repository } from "../links"
 
 export function FooterSection() {
   return (
@@ -73,10 +73,7 @@ export function FooterSection() {
           <a href={DOCS_URL} className="hover:text-foreground">
             Docs <ArrowUpRight className="inline size-4" />
           </a>
-          <a
-            href={`${repository}/tree/main/contracts`}
-            className="hover:text-foreground"
-          >
+          <a href={CONTRACTS_URL} className="hover:text-foreground">
             Contract <ArrowUpRight className="inline size-4" />
           </a>
           <a href="https://near-faucet.io/" className="hover:text-foreground">
