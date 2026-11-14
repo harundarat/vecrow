@@ -15,12 +15,12 @@ import { formatPercent } from "@/lib/escrow-rules"
 import {
   ESCROW_ROLE_LABEL,
   formatDate,
-  formatTime,
   WALLET_SCHEME_LABEL,
 } from "@/lib/format"
 import { mulBps, releasePlan } from "@/lib/payout"
 import { formatUsdc, sumUsdc } from "@/lib/usdc"
 import { cn } from "@/utils"
+import { MilestoneTimeline } from "./milestone-timeline"
 
 /** "NEAR · alice.near" or "EVM · 0x12…". */
 const MILESTONE_STATUS_LABEL: Record<MilestoneStatus, string> = {
@@ -96,21 +96,21 @@ export function MilestonesCard({
       <ol className="flex flex-col divide-y rounded-xl border">
         {escrow.milestones.map((milestone) => (
           <li key={milestone.index} className="flex flex-col gap-3 p-3 text-sm">
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-medium">
-                Milestone {milestone.index + 1}
-              </span>
-              <span className="flex items-center gap-3">
-                <span className="text-muted-foreground">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 flex-wrap items-baseline gap-x-3">
+                <span className="font-medium whitespace-nowrap">
+                  Milestone {milestone.index + 1}
+                </span>
+                <span className="whitespace-nowrap text-muted-foreground">
                   {MILESTONE_STATUS_LABEL[milestone.status] ?? milestone.status}
                 </span>
-                <span className="tabular-nums">
-                  {formatUsdc(milestone.amount)} USDC
-                </span>
+              </div>
+              <span className="shrink-0 whitespace-nowrap tabular-nums">
+                {formatUsdc(milestone.amount)} USDC
               </span>
             </div>
             <PayoutBreakdown escrow={escrow} amount={milestone.amount} />
-            <MilestoneNotes escrow={escrow} milestone={milestone} />
+            <MilestoneTimeline escrow={escrow} milestone={milestone} />
             {actions?.(milestone)}
           </li>
         ))}
@@ -169,44 +169,6 @@ function PayoutBreakdown({
         </span>
       </li>
     </ul>
-  )
-}
-
-function MilestoneNotes({
-  escrow,
-  milestone,
-}: {
-  escrow: EscrowDetail
-  milestone: Milestone
-}) {
-  const notes = escrow.revision_notes.filter(
-    (note) => note.milestone === milestone.index
-  )
-  const autoRelease =
-    milestone.status === "Submitted" && milestone.auto_release_at_ms
-      ? new Date(milestone.auto_release_at_ms).toISOString()
-      : null
-  if (notes.length === 0 && !autoRelease) return null
-  return (
-    <div className="flex flex-col gap-2 text-xs">
-      {notes.map((note) => (
-        <p
-          key={note.tx_hash || note.created_at}
-          className="rounded-lg bg-muted p-2 break-words whitespace-pre-line"
-        >
-          <span className="text-muted-foreground">
-            Revision asked on {formatDate(note.created_at)}:{" "}
-          </span>
-          {note.reason}
-        </p>
-      ))}
-      {autoRelease && (
-        <p className="text-muted-foreground">
-          Released by itself on {formatDate(autoRelease)},{" "}
-          {formatTime(autoRelease)} unless the client asks for a revision.
-        </p>
-      )}
-    </div>
   )
 }
 
