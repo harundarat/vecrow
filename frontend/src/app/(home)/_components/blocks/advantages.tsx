@@ -1,11 +1,11 @@
-import { cn } from "cn"
+import { cn } from "@/utils"
 import Image from "next/image"
 
 export function Advantages({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "inline-flex w-96 h-fit flex-col items-start justify-start gap-4 rounded-xl -bg-linear-147 from-neptune-200/6 from-16% to-neptune-300/6 to-84% p-6 text-pretty",
+        "inline-flex h-fit w-96 flex-col items-start justify-start gap-4 rounded-xl -bg-linear-147 from-neptune-200/6 from-16% to-neptune-300/6 to-84% p-6 text-pretty",
         className
       )}
     >
@@ -13,7 +13,7 @@ export function Advantages({ className }: { className?: string }) {
         Cross-chain transaction. Held in escrow until agreed terms are met.
       </div>
       <div className="flex items-center gap-2">
-        <div className="flex items-center shrink-0">
+        <div className="flex shrink-0 items-center">
           <Image
             height={32}
             width={32}
@@ -46,7 +46,7 @@ export function Advantages({ className }: { className?: string }) {
             +25
           </span>
         </div>
-        <p className="text-sm text-muted-foreground grow">
+        <p className="grow text-sm text-muted-foreground">
           Supported chains on near protocol
         </p>
       </div>

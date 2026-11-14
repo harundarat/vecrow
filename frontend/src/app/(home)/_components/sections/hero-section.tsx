@@ -1,5 +1,5 @@
-import { Button } from "@/components/ui/button"
-import { cn } from "cn"
+import { cn } from "@/utils"
+import { AppEntryButton } from "../app-entry-button"
 import {
   ArrowUpRight,
   BadgeCheckIcon,
@@ -33,14 +33,14 @@ function HeroPanel() {
 
       {/* Headline block */}
       <div className="mt-auto mb-8 flex flex-col gap-2 sm:mb-0">
-        <div className="flex w-fit items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-medium text-primary">
+        <div className="flex w-fit items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-medium text-neptune-300">
           <FlaskConicalIcon className="size-3" />
           <span>Currently on testnet</span>
         </div>
 
         <h1 className="text-5xl font-semibold tracking-tight text-pretty text-foreground sm:leading-tight">
           Agree on the work. <br className="hidden sm:inline" />
-          <span className="text-primary">Secure the payment.</span>
+          <span className="text-neptune-400">Secure the payment.</span>
         </h1>
       </div>
 
@@ -53,10 +53,12 @@ function HeroPanel() {
           Work together with confidence. Funds are held in a smart contract and
           released under the terms both parties agree on.
         </p>
-        <Button size={"lg"} className={"w-full px-6 sm:w-fit"}>
-          Get Started
-          <ArrowUpRight />
-        </Button>
+        <AppEntryButton
+          size="lg"
+          className="w-full px-6 sm:w-fit"
+          signedOutLabel="Get started"
+          icon={<ArrowUpRight aria-hidden />}
+        />
       </div>
     </div>
   )

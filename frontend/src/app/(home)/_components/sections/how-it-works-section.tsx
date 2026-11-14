@@ -1,10 +1,4 @@
-import {
-  Check,
-  CheckCheck,
-  CircleCheck,
-  Send,
-  Wallet,
-} from "lucide-react"
+import { Check, CheckCheck, CircleCheck, Send, Wallet } from "lucide-react"
 
 const steps = [
   {
@@ -52,7 +46,10 @@ export function HowItWorksSection() {
       aria-labelledby="how-it-works-title"
     >
       <div className="flex flex-col justify-center pb-4 sm:col-span-2 lg:col-span-1 lg:row-start-1 lg:pb-0">
-        <h2 id="how-it-works-title" className="text-4xl font-medium tracking-tight sm:text-5xl">
+        <h2
+          id="how-it-works-title"
+          className="text-4xl font-medium tracking-tight sm:text-5xl"
+        >
           How it works
         </h2>
         <p className="mt-4 max-w-xl text-base leading-relaxed text-muted-foreground">
@@ -75,12 +72,14 @@ export function HowItWorksSection() {
                     : "lg:col-start-3 lg:row-start-2"
           }`}
         >
-          <span className="font-mono text-sm tracking-widest text-primary/70">
+          <span className="font-mono text-sm tracking-widest text-neptune-300">
             {step.number}
           </span>
           <StepIllustration kind={step.illustration} />
           <div className="mt-auto pt-8">
-            <h3 className="text-2xl font-medium tracking-tight">{step.title}</h3>
+            <h3 className="text-2xl font-medium tracking-tight">
+              {step.title}
+            </h3>
             <p className="mt-2 leading-relaxed text-muted-foreground">
               {step.description}
             </p>
@@ -96,7 +95,7 @@ function StepIllustration({ kind }: { kind: string }) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-5 text-primary/80">
         <Wallet className="size-10" strokeWidth={1.8} />
-        <span className="rounded-full bg-primary/10 px-4 py-2 text-xs text-primary">
+        <span className="rounded-full bg-primary/10 px-4 py-2 text-xs text-neptune-300">
           <span className="mr-2 inline-block size-1.5 rounded-full bg-primary" />
           Any supported chain
         </span>

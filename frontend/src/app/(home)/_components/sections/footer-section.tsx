@@ -3,8 +3,7 @@ import Link from "next/link"
 import { ArrowUpRight, CodeXml, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { VecrowLogoWordmark } from "@/assets/vecrow-logo-wordmark"
-
-const repository = "https://github.com/harundarat/vecrow"
+import { DOCS_URL, REPOSITORY_URL as repository } from "../links"
 
 export function FooterSection() {
   return (
@@ -19,7 +18,12 @@ export function FooterSection() {
             size="icon-lg"
             nativeButton={false}
             render={
-              <a href={repository} target="_blank" rel="noreferrer" aria-label="Vecrow on GitHub" />
+              <a
+                href={repository}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Vecrow on GitHub"
+              />
             }
           >
             <CodeXml />
@@ -29,7 +33,12 @@ export function FooterSection() {
             size="icon-lg"
             nativeButton={false}
             render={
-              <a href="https://x.com/vecrow" target="_blank" rel="noreferrer" aria-label="Vecrow on X" />
+              <a
+                href="https://x.com/vecrow"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Vecrow on X"
+              />
             }
           >
             <X />
@@ -45,7 +54,11 @@ export function FooterSection() {
             size="lg"
             nativeButton={false}
             render={
-              <a href={`${repository}/issues/new`} target="_blank" rel="noreferrer" />
+              <a
+                href={`${repository}/issues/new`}
+                target="_blank"
+                rel="noreferrer"
+              />
             }
           >
             <CodeXml data-icon="inline-start" />
@@ -53,11 +66,17 @@ export function FooterSection() {
             <ArrowUpRight data-icon="inline-end" />
           </Button>
         </div>
-        <nav aria-label="Footer" className="flex flex-wrap gap-x-7 gap-y-3 text-primary">
-          <a href={`${repository}/tree/main/docs`} className="hover:text-foreground">
+        <nav
+          aria-label="Footer"
+          className="flex flex-wrap gap-x-7 gap-y-3 text-primary"
+        >
+          <a href={DOCS_URL} className="hover:text-foreground">
             Docs <ArrowUpRight className="inline size-4" />
           </a>
-          <a href={`${repository}/tree/main/contracts`} className="hover:text-foreground">
+          <a
+            href={`${repository}/tree/main/contracts`}
+            className="hover:text-foreground"
+          >
             Contract <ArrowUpRight className="inline size-4" />
           </a>
           <a href="https://near-faucet.io/" className="hover:text-foreground">
@@ -75,8 +94,17 @@ export function FooterSection() {
           height={242}
           className="pointer-events-none absolute inset-x-0 top-0 h-auto w-full"
         />
-        <div className="relative flex w-full flex-col justify-between gap-2 text-sm text-muted-foreground/60 sm:flex-row">
-          <p>2026 <a className="underline underline-offset-2" href="https://near.org/">Near Hackathon</a> Project</p>
+        <div className="relative flex w-full flex-col justify-between gap-2 text-sm text-muted-foreground sm:flex-row">
+          <p>
+            2026{" "}
+            <a
+              className="underline underline-offset-2"
+              href="https://near.org/"
+            >
+              Near Hackathon
+            </a>{" "}
+            Project
+          </p>
           <p>Currently, this project only runs on the testnet.</p>
         </div>
       </div>

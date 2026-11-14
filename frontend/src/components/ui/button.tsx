@@ -8,8 +8,9 @@ const buttonVariants = cva(
     variants: {
       variant: {
         primary:
-          "bg-gradient-to-b from-neptune-500 to-neptune-600 text-primary-foreground hover:from-neptune-500/80 hover:to-neptune-600/80",
-        "primary-light": "bg-gradient-to-b from-neptune-500/15 to-neptune-600/15 text-primary-foreground border-primary/24 hover:from-neptune-500/20 hover:to-neptune-600/20",
+          "bg-gradient-to-b from-neptune-600 to-neptune-700 text-primary-foreground hover:from-neptune-600/85 hover:to-neptune-700/85",
+        "primary-light":
+          "border-primary/24 bg-gradient-to-b from-neptune-500/15 to-neptune-600/15 text-primary-foreground hover:from-neptune-500/20 hover:to-neptune-600/20",
         outline:
           "border-border bg-background shadow-xs hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
