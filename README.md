@@ -84,7 +84,21 @@ their NEAR account and split, and approve it as the client.
 
 ## Contract
 
-- Account: `TODO: <escrow>.near` (mainnet) · `TODO: <escrow>.testnet` (testnet)
+- Testnet accounts:
+
+  | Role | Account |
+  | --- | --- |
+  | Escrow contract | [`escrow.vecrow-dev-7528d84d.testnet`](https://testnet.nearblocks.io/address/escrow.vecrow-dev-7528d84d.testnet) |
+  | Mock USDC (`mock-ft`) | [`usdc.vecrow-dev-7528d84d.testnet`](https://testnet.nearblocks.io/address/usdc.vecrow-dev-7528d84d.testnet) |
+  | Treasury (0.5% fee) | [`treasury.vecrow-dev-7528d84d.testnet`](https://testnet.nearblocks.io/address/treasury.vecrow-dev-7528d84d.testnet) |
+  | Relayer (pays gas) | [`relayer.vecrow-dev-7528d84d.testnet`](https://testnet.nearblocks.io/address/relayer.vecrow-dev-7528d84d.testnet) |
+
+  The escrow contract was initialized with `fee_bps` 50. Its code hash on chain,
+  `EiZqb6FnQgjMLCCnNYDwM4rtwLfFMjBRuGMLyGPhCjBV`, is the base58 SHA-256 of the wasm
+  that `make build` produced from `contracts/escrow/` at this commit. The build is not
+  reproducible, so a build on another machine can hash differently.
+- Mainnet: not deployed. The demo runs on testnet, where escrows are funded with the
+  mock token (see [Testnet vs mainnet](#testnet-vs-mainnet)).
 - Code: [`contracts/escrow/`](./contracts/escrow/) (Rust, near-sdk 5.30), built with cargo-near
 - Methods: `create_escrow`, `cancel`, `ft_on_transfer`, `submit_milestone`,
   `approve_milestone`, `request_revision`, `auto_release`, `refund_unsubmitted`,
