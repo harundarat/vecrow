@@ -29,6 +29,7 @@ import { JoinedSection } from "./joined-section"
 import { LinkSection } from "./link-section"
 import { MilestoneActions } from "./milestone-actions"
 import { OnChainDone, OnChainProgress } from "./on-chain-section"
+import { PayoutsSection } from "./payouts-section"
 import { ReviewSection } from "./review-section"
 
 const ON_CHAIN = new Set<EscrowStatus>(["Created", "Funded", "Completed"])
@@ -124,6 +125,14 @@ function EscrowView({
   const fundingAuth = approverActs ? approver.fundingAuth : null
   const roles = viewerRoles(escrow, access, account, approver.approver)
   const freelancerActs = roles.includes("freelancer") && !recovery
+  // The export refuses a recovery session, so it falls back to the guest token.
+  const party = creator || roles.length > 0
+  const sessionToken = recovery ? null : token
+  const guestToken = access?.token || null
+  const exportAuth =
+    party && (sessionToken || guestToken)
+      ? { token: sessionToken, guestToken: sessionToken ? null : guestToken }
+      : null
 
   return (
     <>
@@ -208,6 +217,9 @@ function EscrowView({
       />
       {status === "Funded" && freelancerActs && (
         <RefundAllSection escrow={escrow} onDone={reload} />
+      )}
+      {(status === "Funded" || status === "Completed") && (
+        <PayoutsSection escrow={escrow} auth={exportAuth} />
       )}
       <PartiesCard escrow={escrow} />
 
