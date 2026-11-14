@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { Download, LoaderCircle } from "lucide-react"
+import { Address } from "@/components/address"
 import { FeedbackMessage } from "@/components/feedback-message"
 import { FormSection } from "@/components/form-section"
 import { Button } from "@/components/ui/button"
@@ -40,12 +41,7 @@ export function PayoutsSection({
                 key={payout.account_id}
                 className="flex justify-between gap-3"
               >
-                <span
-                  className="min-w-0 truncate font-mono"
-                  title={payout.account_id}
-                >
-                  {payout.account_id}
-                </span>
+                <Address value={payout.account_id} />
                 <span className="shrink-0 tabular-nums">
                   {formatUsdc(payout.amount)} USDC
                 </span>

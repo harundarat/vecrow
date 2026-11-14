@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { CircleAlert } from "lucide-react"
+import { Notice } from "@/components/feedback-message"
 import { FormSection } from "@/components/form-section"
 import { SplitFields, type SplitRow } from "@/components/split-fields"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
@@ -38,21 +38,15 @@ export function FreelancerFields({
       description="You are paid in USDC on NEAR."
     >
       {nearWallets.length === 0 ? (
-        <p
-          role="alert"
-          className="flex items-start gap-2 rounded-xl bg-destructive/10 p-3 text-sm text-destructive"
-        >
-          <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
-          <span>
-            To be paid, link a NEAR wallet to your account first.{" "}
-            <Link
-              href="/app/settings#wallets"
-              className="font-medium underline underline-offset-4"
-            >
-              Link a wallet
-            </Link>
-          </span>
-        </p>
+        <Notice role="alert">
+          To be paid, link a NEAR wallet to your account first.{" "}
+          <Link
+            href="/app/settings#wallets"
+            className="font-medium underline underline-offset-4"
+          >
+            Link a wallet
+          </Link>
+        </Notice>
       ) : (
         <Field>
           <FieldLabel htmlFor="freelancer-account">

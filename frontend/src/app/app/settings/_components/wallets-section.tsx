@@ -12,6 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { Address } from "@/components/address"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/context/auth"
 import {
@@ -30,7 +31,7 @@ import { describeApiError } from "@/lib/api/errors"
 import { formatDate, shortenAddress, WALLET_SCHEME_LABEL } from "@/lib/format"
 import { describeWalletError } from "@/lib/wallet-errors"
 import { FeedbackMessage, type Feedback } from "@/components/feedback-message"
-import { SettingsSection } from "./settings-section"
+import { FormSection } from "@/components/form-section"
 
 const CHAINS: Array<{ chain: WalletChain; label: string; icon: string }> = [
   { chain: "near", label: "NEAR", icon: "/crypto-icons/near-protocol.png" },
@@ -127,7 +128,7 @@ export function WalletsSection({ account }: { account: Account }) {
   }
 
   return (
-    <SettingsSection
+    <FormSection
       id="wallets"
       title="Wallets"
       description="You can sign in with any of these wallets. Each one is linked by signing a message with it."
@@ -137,12 +138,7 @@ export function WalletsSection({ account }: { account: Account }) {
           <li key={wallet.id} className="flex items-center gap-3 p-3">
             <WalletIcon aria-hidden className="size-5 shrink-0 text-primary" />
             <span className="min-w-0 flex-1">
-              <span
-                className="block truncate font-mono text-sm"
-                title={wallet.address}
-              >
-                {shortenAddress(wallet.address)}
-              </span>
+              <Address value={wallet.address} className="flex text-sm" />
               <span className="text-xs text-muted-foreground">
                 {WALLET_SCHEME_LABEL[wallet.scheme] ?? wallet.scheme} · linked{" "}
                 {formatDate(wallet.created_at)}
@@ -237,7 +233,7 @@ export function WalletsSection({ account }: { account: Account }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </SettingsSection>
+    </FormSection>
   )
 }
 

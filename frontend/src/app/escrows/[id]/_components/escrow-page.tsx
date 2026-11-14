@@ -1,10 +1,13 @@
 "use client"
 
 import Link from "next/link"
-import { ArrowLeft, CircleAlert, LoaderCircle } from "lucide-react"
+import { CircleAlert } from "lucide-react"
 import { VecrowLogoWordmark } from "@/assets/vecrow-logo-wordmark"
+import { EmptyState } from "@/components/empty-state"
 import { EscrowNextStep } from "@/components/escrow-next-step"
 import { FeedbackMessage } from "@/components/feedback-message"
+import { LoadingState } from "@/components/loading-state"
+import { BackLink } from "@/components/page-header"
 import { useAuth } from "@/context/auth"
 import { useEscrowDetail } from "@/hooks/use-escrow-detail"
 import type { useGuestAccess } from "@/hooks/use-guest-access"
@@ -48,7 +51,7 @@ export function EscrowPage({ id }: { id: string }) {
   const signedIn = status === "authenticated"
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-3xl flex-col gap-6 px-4 py-6">
+    <main className="mx-auto flex min-h-svh w-full max-w-3xl flex-col gap-6 px-4 py-8">
       <Link
         href={signedIn ? "/app" : "/"}
         aria-label="Vecrow"
@@ -57,13 +60,9 @@ export function EscrowPage({ id }: { id: string }) {
         <VecrowLogoWordmark className="w-28" />
       </Link>
       {signedIn && (
-        <Link
-          href="/app"
-          className="-mb-2 inline-flex items-center gap-1 self-start text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft aria-hidden className="size-4" />
+        <BackLink href="/app" className="-mb-2">
           Escrows
-        </Link>
+        </BackLink>
       )}
 
       {detail.escrow ? (
@@ -74,20 +73,14 @@ export function EscrowPage({ id }: { id: string }) {
           reload={detail.reload}
         />
       ) : detail.error ? (
-        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed px-4 py-12 text-center">
-          <CircleAlert aria-hidden className="size-6 text-destructive" />
-          <p className="font-semibold">Could not open the escrow</p>
-          <p className="max-w-sm text-sm text-muted-foreground">
-            {detail.error}
-          </p>
-        </div>
+        <EmptyState
+          tone="error"
+          icon={<CircleAlert aria-hidden className="size-6" />}
+          title="Could not open the escrow"
+          description={detail.error}
+        />
       ) : (
-        <div className="flex justify-center py-16" aria-busy="true">
-          <LoaderCircle
-            aria-label="Loading the escrow"
-            className="size-6 animate-spin text-muted-foreground"
-          />
-        </div>
+        <LoadingState label="Loading the escrow" />
       )}
     </main>
   )

@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useState } from "react"
 import { CircleCheck, LoaderCircle } from "lucide-react"
+import { Address } from "@/components/address"
 import { FeedbackMessage, type Feedback } from "@/components/feedback-message"
 import { FormSection } from "@/components/form-section"
 import { Button } from "@/components/ui/button"
@@ -94,8 +95,7 @@ export function JoinedSection({
     >
       <p className="text-sm">
         <span className="text-muted-foreground">Signed with </span>
-        {WALLET_SCHEME_LABEL[wallet.scheme]}{" "}
-        <span className="font-mono break-all">{wallet.address}</span>
+        {WALLET_SCHEME_LABEL[wallet.scheme]} <Address value={wallet.address} />
       </p>
 
       {saved ? (

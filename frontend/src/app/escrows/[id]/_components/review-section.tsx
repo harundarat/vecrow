@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { LoaderCircle } from "lucide-react"
+import { Address } from "@/components/address"
 import { FeedbackMessage } from "@/components/feedback-message"
 import { FormSection } from "@/components/form-section"
 import {
@@ -36,7 +37,7 @@ import {
 } from "@/lib/format"
 import { assertTermsRequest } from "@/lib/terms"
 import { describeWalletError } from "@/lib/wallet-errors"
-import { approverLabel, EscrowWarnings } from "./escrow-details"
+import { ApproverWallet, EscrowWarnings } from "./escrow-details"
 
 type Step = "connecting" | "signing" | "sending" | "rejecting" | "done"
 
@@ -127,34 +128,33 @@ export function ReviewSection({
       <dl className="grid gap-3 text-sm sm:grid-cols-2">
         <Detail label="Signed with">
           {WALLET_SCHEME_LABEL[submission.wallet.scheme]}{" "}
-          <span className="font-mono break-all">
-            {submission.wallet.address}
-          </span>
+          <Address value={submission.wallet.address} />
         </Detail>
         {otherRole === "client" ? (
           <>
             <Detail label="Approver wallet">
-              <span className="font-mono break-all">
-                {approverLabel(terms.approver)}
-              </span>
+              <ApproverWallet approver={terms.approver} />
             </Detail>
             <Detail label="Refund account">
-              <span className="font-mono break-all">
-                {terms.refund_account}
-              </span>
+              <Address value={terms.refund_account} />
             </Detail>
           </>
         ) : (
           <>
             <Detail label="NEAR account">
-              <span className="font-mono break-all">{terms.freelancer}</span>
+              <Address value={terms.freelancer} />
             </Detail>
             <Detail label="Split">
               <ul>
                 {terms.split.map((share) => (
-                  <li key={share.account_id} className="break-all">
-                    {formatPercent(share.bps)} to{" "}
-                    <span className="font-mono">{share.account_id}</span>
+                  <li
+                    key={share.account_id}
+                    className="flex min-w-0 items-center gap-1"
+                  >
+                    <span className="shrink-0">
+                      {formatPercent(share.bps)} to
+                    </span>
+                    <Address value={share.account_id} />
                   </li>
                 ))}
               </ul>

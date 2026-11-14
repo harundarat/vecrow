@@ -25,7 +25,7 @@ import {
 import type { Account } from "@/lib/api/auth"
 import { describeApiError } from "@/lib/api/errors"
 import { FeedbackMessage, type Feedback } from "@/components/feedback-message"
-import { SettingsSection } from "./settings-section"
+import { FormSection } from "@/components/form-section"
 
 type Action = "send" | "verify" | "resend" | "cancel" | "remove"
 
@@ -96,7 +96,7 @@ export function EmailSection({ account }: { account: Account }) {
   const busy = pending !== null
 
   return (
-    <SettingsSection
+    <FormSection
       id="email"
       title="Email"
       description="Optional. A verified email lets others invite you by email and lets you sign in with a code if you lose your wallets."
@@ -290,7 +290,7 @@ export function EmailSection({ account }: { account: Account }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </SettingsSection>
+    </FormSection>
   )
 }
 

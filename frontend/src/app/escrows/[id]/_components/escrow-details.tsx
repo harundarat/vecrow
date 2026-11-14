@@ -1,16 +1,13 @@
-import { CircleAlert } from "lucide-react"
 import {
   ESCROW_STATUS_HINT,
   EscrowStatusBadge,
+  InvitedBadge,
+  MilestoneStatusBadge,
 } from "@/components/escrow-status-badge"
+import { Address } from "@/components/address"
+import { Notice } from "@/components/feedback-message"
 import { FormSection } from "@/components/form-section"
-import { Badge } from "@/components/ui/badge"
-import type {
-  Approver,
-  EscrowDetail,
-  Milestone,
-  MilestoneStatus,
-} from "@/lib/api/escrow"
+import type { Approver, EscrowDetail, Milestone } from "@/lib/api/escrow"
 import { formatPercent } from "@/lib/escrow-rules"
 import {
   ESCROW_ROLE_LABEL,
@@ -19,21 +16,18 @@ import {
 } from "@/lib/format"
 import { mulBps, releasePlan } from "@/lib/payout"
 import { formatUsdc, sumUsdc } from "@/lib/usdc"
-import { cn } from "@/utils"
 import { MilestoneTimeline } from "./milestone-timeline"
 
-/** "NEAR · alice.near" or "EVM · 0x12…". */
-const MILESTONE_STATUS_LABEL: Record<MilestoneStatus, string> = {
-  Pending: "Pending",
-  Submitted: "Submitted",
-  RevisionRequested: "Revision requested",
-  Released: "Released",
-  Refunded: "Refunded",
-}
-
-export function approverLabel(approver: Approver): string {
-  const address = approver.account_id ?? approver.address ?? ""
-  return `${WALLET_SCHEME_LABEL[approver.scheme] ?? approver.scheme} · ${address}`
+/** "NEAR · alice.near" or "EVM · 0x12…", with a copy button. */
+export function ApproverWallet({ approver }: { approver: Approver }) {
+  return (
+    <span className="inline-flex max-w-full min-w-0 items-center gap-1 align-middle">
+      <span className="shrink-0">
+        {WALLET_SCHEME_LABEL[approver.scheme] ?? approver.scheme} ·
+      </span>
+      <Address value={approver.account_id ?? approver.address ?? ""} />
+    </span>
+  )
 }
 
 export function EscrowHeader({ escrow }: { escrow: EscrowDetail }) {
@@ -42,10 +36,10 @@ export function EscrowHeader({ escrow }: { escrow: EscrowDetail }) {
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-2xl font-medium">
-          {escrow.total ? formatUsdc(escrow.total) : "—"} USDC
+          {escrow.total ? `${formatUsdc(escrow.total)} USDC` : "No amount yet"}
         </h1>
         <EscrowStatusBadge status={escrow.status} />
-        {escrow.viewer.invited && <Badge variant="outline">Invited</Badge>}
+        {escrow.viewer.invited && <InvitedBadge />}
       </div>
       <p className="text-sm text-muted-foreground">
         {ESCROW_STATUS_HINT[escrow.status]}. Created by the {creatorRole} on{" "}
@@ -65,14 +59,9 @@ export function EscrowWarnings({
   return (
     <div className="flex flex-col gap-2">
       {warnings.map((warning) => (
-        <p
-          key={warning.code}
-          role="alert"
-          className="flex items-start gap-2 rounded-xl bg-destructive/10 p-3 text-sm break-words text-destructive"
-        >
-          <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
-          <span className="min-w-0">{warning.message}</span>
-        </p>
+        <Notice key={warning.code} role="alert">
+          {warning.message}
+        </Notice>
       ))}
     </div>
   )
@@ -97,13 +86,11 @@ export function MilestonesCard({
         {escrow.milestones.map((milestone) => (
           <li key={milestone.index} className="flex flex-col gap-3 p-3 text-sm">
             <div className="flex items-start justify-between gap-3">
-              <div className="flex min-w-0 flex-wrap items-baseline gap-x-3">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="font-medium whitespace-nowrap">
                   Milestone {milestone.index + 1}
                 </span>
-                <span className="whitespace-nowrap text-muted-foreground">
-                  {MILESTONE_STATUS_LABEL[milestone.status] ?? milestone.status}
-                </span>
+                <MilestoneStatusBadge status={milestone.status} />
               </div>
               <span className="shrink-0 whitespace-nowrap tabular-nums">
                 {formatUsdc(milestone.amount)} USDC
@@ -154,8 +141,8 @@ function PayoutBreakdown({
     >
       {rows.map((row) => (
         <li key={row.label} className="flex justify-between gap-3">
-          <span className={cn("min-w-0 truncate", row.mono && "font-mono")}>
-            {row.label}
+          <span className="min-w-0 truncate">
+            {row.mono ? <Address value={row.label} /> : row.label}
           </span>
           <span className="shrink-0 tabular-nums">
             {formatUsdc(row.amount)} USDC
@@ -179,36 +166,36 @@ export function PartiesCard({ escrow }: { escrow: EscrowDetail }) {
       <dl className="grid gap-4 text-sm sm:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-0.5">
           <dt className="text-muted-foreground">Freelancer</dt>
-          <dd
-            className={cn("truncate", escrow.freelancer && "font-mono")}
-            title={escrow.freelancer?.account}
-          >
-            {escrow.freelancer?.account ?? "Not joined yet"}
+          <dd className="min-w-0">
+            {escrow.freelancer ? (
+              <Address value={escrow.freelancer.account} />
+            ) : (
+              "Not joined yet"
+            )}
           </dd>
           {escrow.freelancer?.split.map((share) => (
             <dd
               key={share.account_id}
-              className="truncate text-xs text-muted-foreground"
-              title={share.account_id}
+              className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
             >
-              {formatPercent(share.bps)} to {share.account_id}
+              <span className="shrink-0">{formatPercent(share.bps)} to</span>
+              <Address value={share.account_id} />
             </dd>
           ))}
         </div>
         <div className="flex min-w-0 flex-col gap-0.5">
           <dt className="text-muted-foreground">Client approver</dt>
-          <dd
-            className={cn("truncate", approver && "font-mono")}
-            title={approver ? approverLabel(approver) : undefined}
-          >
-            {approver ? approverLabel(approver) : "Not joined yet"}
+          <dd className="min-w-0">
+            {approver ? (
+              <ApproverWallet approver={approver} />
+            ) : (
+              "Not joined yet"
+            )}
           </dd>
           {escrow.client && (
-            <dd
-              className="truncate text-xs text-muted-foreground"
-              title={escrow.client.refund_account}
-            >
-              Refunds to {escrow.client.refund_account}
+            <dd className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+              <span className="shrink-0">Refunds to</span>
+              <Address value={escrow.client.refund_account} />
             </dd>
           )}
         </div>

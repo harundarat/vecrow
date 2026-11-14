@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { LoaderCircle } from "lucide-react"
+import { Address } from "@/components/address"
 import { FeedbackMessage } from "@/components/feedback-message"
 import { FormSection } from "@/components/form-section"
 import {
@@ -126,7 +127,7 @@ function refundText(escrow: EscrowDetail, amount: string) {
       {to && (
         <>
           {" "}
-          at <span className="font-mono break-all">{to}</span>
+          at <Address value={to} />
         </>
       )}
       . This cannot be undone.

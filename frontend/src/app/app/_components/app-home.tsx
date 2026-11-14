@@ -4,7 +4,8 @@ import Link from "next/link"
 import { Lock, Plus } from "lucide-react"
 import { buttonVariants } from "@/components/ui/button"
 import { useAuth } from "@/context/auth"
-import { EmptyState } from "./empty-state"
+import { EmptyState } from "@/components/empty-state"
+import { PageHeader } from "@/components/page-header"
 import { EscrowList } from "./escrow-list"
 
 export function AppHome() {
@@ -13,20 +14,18 @@ export function AppHome() {
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-medium">Escrows</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Escrows you created, joined or were invited to.
-          </p>
-        </div>
-        {!recovery && (
-          <Link href="/app/escrows/new" className={buttonVariants()}>
-            <Plus aria-hidden />
-            New escrow
-          </Link>
-        )}
-      </div>
+      <PageHeader
+        title="Escrows"
+        description="Escrows you created, joined or were invited to."
+        action={
+          !recovery && (
+            <Link href="/app/escrows/new" className={buttonVariants()}>
+              <Plus aria-hidden />
+              New escrow
+            </Link>
+          )
+        }
+      />
 
       {recovery ? (
         <EmptyState

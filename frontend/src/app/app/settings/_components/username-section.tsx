@@ -10,7 +10,7 @@ import { updateAccount } from "@/lib/api/account"
 import type { Account } from "@/lib/api/auth"
 import { describeApiError } from "@/lib/api/errors"
 import { FeedbackMessage, type Feedback } from "@/components/feedback-message"
-import { SettingsSection } from "./settings-section"
+import { FormSection } from "@/components/form-section"
 
 export function UsernameSection({ account }: { account: Account }) {
   const { recovery, request, setAccount } = useAuth()
@@ -41,7 +41,7 @@ export function UsernameSection({ account }: { account: Account }) {
   }
 
   return (
-    <SettingsSection
+    <FormSection
       id="username"
       title="Username"
       description="Others can invite you to an escrow by this name."
@@ -79,6 +79,6 @@ export function UsernameSection({ account }: { account: Account }) {
         </Field>
         <FeedbackMessage feedback={feedback} />
       </form>
-    </SettingsSection>
+    </FormSection>
   )
 }

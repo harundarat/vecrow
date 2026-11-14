@@ -1,5 +1,6 @@
+import { Mail } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import type { EscrowStatus } from "@/lib/api/escrow"
+import type { EscrowStatus, MilestoneStatus } from "@/lib/api/escrow"
 import { cn } from "@/utils"
 
 export const ESCROW_STATUS_LABEL: Record<EscrowStatus, string> = {
@@ -50,6 +51,45 @@ export function EscrowStatusBadge({
       )}
     >
       {ESCROW_STATUS_LABEL[status] ?? status}
+    </Badge>
+  )
+}
+
+const MILESTONE_STATUS_LABEL: Record<MilestoneStatus, string> = {
+  Pending: "Pending",
+  Submitted: "Submitted",
+  RevisionRequested: "Revision requested",
+  Released: "Released",
+  Refunded: "Refunded",
+}
+
+const MILESTONE_VARIANT: Record<
+  MilestoneStatus,
+  "default" | "secondary" | "outline"
+> = {
+  Pending: "outline",
+  Submitted: "secondary",
+  RevisionRequested: "secondary",
+  Released: "default",
+  Refunded: "outline",
+}
+
+export function MilestoneStatusBadge({ status }: { status: MilestoneStatus }) {
+  return (
+    <Badge
+      variant={MILESTONE_VARIANT[status] ?? "outline"}
+      className={cn(status === "Refunded" && "text-muted-foreground")}
+    >
+      {MILESTONE_STATUS_LABEL[status] ?? status}
+    </Badge>
+  )
+}
+
+export function InvitedBadge() {
+  return (
+    <Badge variant="outline" title="Someone invited you to this escrow">
+      <Mail aria-hidden />
+      Invited
     </Badge>
   )
 }

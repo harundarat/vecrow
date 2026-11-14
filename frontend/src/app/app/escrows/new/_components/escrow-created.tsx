@@ -2,9 +2,8 @@
 
 import Link from "next/link"
 import { CircleCheck } from "lucide-react"
-import { CopyButton } from "@/components/copy-button"
+import { CopyField } from "@/components/copy-button"
 import { buttonVariants } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import type { CreatedEscrow } from "@/lib/api/escrow"
 
 export function EscrowCreated({ escrow }: { escrow: CreatedEscrow }) {
@@ -31,16 +30,7 @@ export function EscrowCreated({ escrow }: { escrow: CreatedEscrow }) {
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Input
-          readOnly
-          aria-label="Escrow link"
-          value={escrow.link}
-          onFocus={(event) => event.currentTarget.select()}
-          className="min-w-0 font-mono text-sm sm:flex-1"
-        />
-        <CopyButton value={escrow.link} label="Copy link" />
-      </div>
+      <CopyField value={escrow.link} label="Escrow link" />
 
       {escrow.invitation && (
         <p className="text-sm text-muted-foreground">

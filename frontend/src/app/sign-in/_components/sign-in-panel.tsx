@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
-import { CircleAlert } from "lucide-react"
+import { Notice } from "@/components/feedback-message"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/context/auth"
 import {
@@ -143,30 +143,25 @@ export function SignInPanel() {
       </p>
 
       {failure && (
-        <div
+        <Notice
           role="alert"
-          className="flex flex-col gap-3 rounded-2xl bg-destructive/10 p-4 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
+          action={
+            failedSigner?.address && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleDisconnect(failure.chain)}
+              >
+                Use another wallet
+              </Button>
+            )
+          }
         >
-          <p className="flex items-start gap-2">
-            <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
-            <span>
-              <span className="font-semibold">
-                Could not sign in with {CHAIN_NAME[failure.chain]}.
-              </span>{" "}
-              {failure.message}
-            </span>
-          </p>
-          {failedSigner?.address && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="self-start sm:self-auto"
-              onClick={() => void handleDisconnect(failure.chain)}
-            >
-              Use another wallet
-            </Button>
-          )}
-        </div>
+          <span className="font-semibold">
+            Could not sign in with {CHAIN_NAME[failure.chain]}.
+          </span>{" "}
+          {failure.message}
+        </Notice>
       )}
     </div>
   )

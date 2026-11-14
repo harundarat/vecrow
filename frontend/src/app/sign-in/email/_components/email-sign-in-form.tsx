@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
-import { CircleAlert, LoaderCircle, MailCheck } from "lucide-react"
+import { LoaderCircle, MailCheck } from "lucide-react"
+import { FeedbackMessage } from "@/components/feedback-message"
 import { CODE_LENGTH, OneTimeCodeInput } from "@/components/one-time-code-input"
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
@@ -176,14 +177,9 @@ export function EmailSignInForm() {
         </form>
       )}
 
-      <div aria-live="polite">
-        {error && (
-          <p className="flex items-start gap-2 rounded-xl bg-destructive/10 p-3 text-sm text-destructive">
-            <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
-            {error}
-          </p>
-        )}
-      </div>
+      <FeedbackMessage
+        feedback={error ? { kind: "error", message: error } : null}
+      />
     </div>
   )
 }

@@ -2,7 +2,9 @@
 
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect } from "react"
-import { CircleAlert, LoaderCircle } from "lucide-react"
+import { CircleAlert } from "lucide-react"
+import { EmptyState } from "@/components/empty-state"
+import { LoadingState } from "@/components/loading-state"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/context/auth"
 
@@ -20,30 +22,23 @@ export function AuthGate({ children }: React.PropsWithChildren) {
 
   if (status === "authenticated") return children
 
-  if (status === "error") {
-    return (
-      <main className="mx-auto flex min-h-svh max-w-md flex-col items-center justify-center gap-4 p-4 text-center">
-        <CircleAlert aria-hidden className="size-8 text-destructive" />
-        <div>
-          <h1 className="text-lg font-semibold">Could not load your account</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{error}</p>
-        </div>
-        <Button variant="outline" onClick={reload}>
-          Try again
-        </Button>
-      </main>
-    )
-  }
-
   return (
-    <main
-      className="flex min-h-svh items-center justify-center p-4"
-      aria-busy="true"
-    >
-      <LoaderCircle
-        aria-label="Loading your account"
-        className="size-6 animate-spin text-muted-foreground"
-      />
+    <main className="mx-auto flex min-h-svh w-full max-w-md flex-col justify-center p-4">
+      {status === "error" ? (
+        <EmptyState
+          tone="error"
+          icon={<CircleAlert aria-hidden className="size-6" />}
+          title="Could not load your account"
+          description={error}
+          action={
+            <Button variant="outline" size="sm" onClick={reload}>
+              Try again
+            </Button>
+          }
+        />
+      ) : (
+        <LoadingState label="Loading your account" />
+      )}
     </main>
   )
 }

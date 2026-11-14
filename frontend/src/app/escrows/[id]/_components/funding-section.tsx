@@ -8,6 +8,7 @@ import {
   LoaderCircle,
 } from "lucide-react"
 import { CopyButton } from "@/components/copy-button"
+import { LoadingState } from "@/components/loading-state"
 import { FeedbackMessage } from "@/components/feedback-message"
 import { FormSection } from "@/components/form-section"
 import { Button } from "@/components/ui/button"
@@ -49,7 +50,7 @@ import {
   tokenChains,
 } from "@/lib/funding"
 import { formatUsdc } from "@/lib/usdc"
-import { approverLabel } from "./escrow-details"
+import { ApproverWallet } from "./escrow-details"
 
 type TokensState = { tokens: Token[] | null; error: string | null }
 
@@ -119,17 +120,13 @@ export function FundingSection({
       <p className="flex items-start gap-2 rounded-xl bg-muted p-3 text-sm">
         <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
         <span className="min-w-0 break-words">
-          Pay only if the approver{" "}
-          <span className="font-mono break-all">{approverLabel(approver)}</span>{" "}
-          is your wallet. It approves every payout.
+          Pay only if the approver <ApproverWallet approver={approver} /> is
+          your wallet. It approves every payout.
         </span>
       </p>
 
       {!loaded && !error ? (
-        <LoaderCircle
-          aria-label="Loading the payment"
-          className="size-5 animate-spin self-center text-muted-foreground"
-        />
+        <LoadingState label="Loading the payment" className="py-2" />
       ) : null}
       <FeedbackMessage
         feedback={error ? { kind: "error", message: error } : null}
@@ -524,11 +521,8 @@ export function FundingLocked({
           {approver && (
             <>
               {" "}
-              Do not pay if{" "}
-              <span className="font-mono break-all">
-                {approverLabel(approver)}
-              </span>{" "}
-              is not your wallet: it approves every payout.
+              Do not pay if <ApproverWallet approver={approver} /> is not your
+              wallet: it approves every payout.
             </>
           )}
         </span>

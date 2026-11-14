@@ -2,20 +2,15 @@
 
 import Link from "next/link"
 import { useEffect, useState } from "react"
-import {
-  ChevronRight,
-  CircleAlert,
-  FileText,
-  LoaderCircle,
-  Mail,
-  SearchX,
-} from "lucide-react"
+import { ChevronRight, CircleAlert, FileText, SearchX } from "lucide-react"
+import { EmptyState } from "@/components/empty-state"
 import { EscrowNextStep } from "@/components/escrow-next-step"
 import {
   ESCROW_STATUS_LABEL,
   EscrowStatusBadge,
+  InvitedBadge,
 } from "@/components/escrow-status-badge"
-import { Badge } from "@/components/ui/badge"
+import { LoadingState } from "@/components/loading-state"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
   Select,
@@ -36,7 +31,6 @@ import {
 } from "@/lib/api/escrow"
 import { ESCROW_ROLE_LABEL, formatDate } from "@/lib/format"
 import { formatUsdc } from "@/lib/usdc"
-import { EmptyState } from "./empty-state"
 
 type RoleTab = "all" | EscrowRole
 type StatusFilter = "all" | EscrowStatus
@@ -122,18 +116,10 @@ export function EscrowList() {
 
       <TabsContent value={role} className="mt-4">
         {!current ? (
-          <div
-            className="flex justify-center py-12"
-            aria-busy="true"
-            aria-live="polite"
-          >
-            <LoaderCircle
-              aria-label="Loading escrows"
-              className="size-6 animate-spin text-muted-foreground"
-            />
-          </div>
+          <LoadingState label="Loading escrows" />
         ) : current.error ? (
           <EmptyState
+            tone="error"
             icon={<CircleAlert aria-hidden className="size-6" />}
             title="Could not load your escrows"
             description={current.error}
@@ -205,17 +191,18 @@ function EscrowItem({ escrow }: { escrow: MyEscrow }) {
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <EscrowStatusBadge status={escrow.status} />
-          {escrow.invited && (
-            <Badge variant="outline" title="Someone invited you to this escrow">
-              <Mail aria-hidden />
-              Invited
-            </Badge>
-          )}
+          {escrow.invited && <InvitedBadge />}
         </div>
         <div>
           <p className="text-lg font-medium">
-            {escrow.total ? formatUsdc(escrow.total) : "—"}{" "}
-            <span className="text-sm text-muted-foreground">USDC</span>
+            {escrow.total ? (
+              <>
+                {formatUsdc(escrow.total)}{" "}
+                <span className="text-sm text-muted-foreground">USDC</span>
+              </>
+            ) : (
+              "No amount yet"
+            )}
           </p>
           <EscrowNextStep
             escrow={escrow}

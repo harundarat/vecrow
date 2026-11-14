@@ -1,9 +1,13 @@
 import type { WalletScheme } from "./api/auth"
 import type { EscrowRole } from "./api/escrow"
 
-/** Shortens long wallet addresses for display; short NEAR names stay whole. */
+/**
+ * Shortens hex and base58 addresses for display. NEAR names such as
+ * `alice.testnet` stay whole: cut in the middle, they no longer say whose
+ * account it is.
+ */
 export function shortenAddress(address: string): string {
-  if (address.length <= 18) return address
+  if (address.length <= 18 || address.includes(".")) return address
   return `${address.slice(0, 6)}…${address.slice(-4)}`
 }
 
