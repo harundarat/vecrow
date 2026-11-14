@@ -8,7 +8,7 @@ import { useAuth } from "@/context/auth"
 import { useEscrowDetail } from "@/hooks/use-escrow-detail"
 import type { useGuestAccess } from "@/hooks/use-guest-access"
 import type { EscrowDetail, EscrowStatus } from "@/lib/api/escrow"
-import { approverView, isFreelancer } from "@/lib/escrow-viewer"
+import { approverView, isFreelancer, viewerRoles } from "@/lib/escrow-viewer"
 import { sameWallet } from "@/lib/guest-access"
 import {
   EscrowHeader,
@@ -17,6 +17,10 @@ import {
   PartiesCard,
 } from "./escrow-details"
 import { CancelSection } from "./cancel-section"
+import {
+  FreelancerMilestoneActions,
+  RefundAllSection,
+} from "./freelancer-actions"
 import { FundingLocked, FundingSection } from "./funding-section"
 import { InvitationSection } from "./invitation-section"
 import { JoinSection } from "./join-section"
@@ -117,6 +121,8 @@ function EscrowView({
   )
   const approverActs = approver.approver && !recovery
   const fundingAuth = approverActs ? approver.fundingAuth : null
+  const roles = viewerRoles(escrow, access, account, approver.approver)
+  const freelancerActs = roles.includes("freelancer") && !recovery
 
   return (
     <>
@@ -171,18 +177,31 @@ function EscrowView({
       <MilestonesCard
         escrow={escrow}
         actions={
-          status === "Funded" && approverActs
+          status === "Funded" && (approverActs || freelancerActs)
             ? (milestone) =>
-                milestone.status === "Submitted" && (
-                  <MilestoneActions
-                    escrow={escrow}
-                    milestone={milestone}
-                    onDone={reload}
-                  />
-                )
+                milestone.status === "Submitted"
+                  ? approverActs && (
+                      <MilestoneActions
+                        escrow={escrow}
+                        milestone={milestone}
+                        onDone={reload}
+                      />
+                    )
+                  : (milestone.status === "Pending" ||
+                      milestone.status === "RevisionRequested") &&
+                    freelancerActs && (
+                      <FreelancerMilestoneActions
+                        escrow={escrow}
+                        milestone={milestone}
+                        onDone={reload}
+                      />
+                    )
             : undefined
         }
       />
+      {status === "Funded" && freelancerActs && (
+        <RefundAllSection escrow={escrow} onDone={reload} />
+      )}
       <PartiesCard escrow={escrow} />
 
       {!creator && !recovery && status === "Open" && (
@@ -200,10 +219,13 @@ function EscrowView({
         <LinkSection link={escrow.link} open={false} />
       )}
       {creator && CANCELLABLE.has(status) && (
-        <CancelSection escrow={escrow} asApprover={false} onDone={reload} />
+        <CancelSection escrow={escrow} by="creator" onDone={reload} />
       )}
       {status === "Created" && approverActs && (
-        <CancelSection escrow={escrow} asApprover onDone={reload} />
+        <CancelSection escrow={escrow} by="approver" onDone={reload} />
+      )}
+      {status === "Created" && freelancerActs && !approverActs && (
+        <CancelSection escrow={escrow} by="freelancer" onDone={reload} />
       )}
     </>
   )

@@ -1,5 +1,5 @@
 import type { Account } from "./api/auth"
-import type { Approver, Escrow, WalletRef } from "./api/escrow"
+import type { Approver, Escrow, EscrowRole, WalletRef } from "./api/escrow"
 import type { FundingAuth } from "./api/funding"
 import { sameWallet, type GuestAccess } from "./guest-access"
 
@@ -62,4 +62,27 @@ export function isFreelancer(
     (guest !== null && sameWallet(guest.wallet, wallet)) ||
     ownsWallet(account, wallet)
   )
+}
+
+/** The viewer's roles in the escrow, as the dashboard lists them. */
+export function viewerRoles(
+  escrow: Escrow & { viewer: { creator: boolean } },
+  guest: GuestAccess | null,
+  account: Account | null,
+  approver: boolean
+): EscrowRole[] {
+  const roles: EscrowRole[] = []
+  if (isFreelancer(escrow, guest, account)) roles.push("freelancer")
+  if (approver || (escrow.viewer.creator && escrow.creator_role === "client")) {
+    roles.push("client")
+  }
+  const member = (escrow.freelancer?.split ?? []).some((share) => {
+    const wallet: WalletRef = { scheme: "nep413", address: share.account_id }
+    return (
+      (guest !== null && sameWallet(guest.wallet, wallet)) ||
+      ownsWallet(account, wallet)
+    )
+  })
+  if (member && !roles.includes("freelancer")) roles.push("member")
+  return roles
 }
