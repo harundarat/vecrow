@@ -47,6 +47,12 @@ export function base64ToBytes(value: string): Uint8Array {
   return decodeBase64(value)
 }
 
+/** Standard or URL-safe base64, with or without padding. */
+export function looseBase64ToBytes(value: string): Uint8Array {
+  const standard = value.replace(/-/g, "+").replace(/_/g, "/")
+  return base64ToBytes(standard.padEnd(Math.ceil(standard.length / 4) * 4, "="))
+}
+
 /** `personal_sign` result as the backend expects it: `0x` + 65 bytes, lowercase. */
 export function toEip191Signature(signature: string): string {
   const hex = signature.startsWith("0x") ? signature : `0x${signature}`
