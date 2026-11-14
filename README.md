@@ -30,6 +30,10 @@ automatically between team members. Freelancers and clients never buy NEAR for g
    → the backend creates the escrow on-chain, escrow status = `Created`.
 4. As the client, pick USDC on Base and send to the deposit address shown
    → escrow status = `Funded`, with the NEAR transaction linked.
+   On testnet, where 1Click does not run, fund it instead with
+   `contracts/scripts/fund-escrow-testnet.sh <escrow-id> <account>` (the ID is in the
+   page URL, `/escrows/<escrow-id>`) and reload the page → escrow status = `Funded`
+   (see [Testnet vs mainnet](#testnet-vs-mainnet)).
 5. As the freelancer, click "Submit milestone 1" (the wallet holds 0 NEAR)
    → the relayer pays gas, milestone status = `Submitted`.
 6. As the client, click "Request revision" → milestone status = `RevisionRequested`;
@@ -160,17 +164,22 @@ downloads the sandbox binary into `target/sandbox-shim/` and runs it with
 that request to the hard limit (this needs a C compiler). Set `NEAR_SANDBOX_BIN_PATH` to
 use another sandbox binary instead.
 
-Deploying (testnet first, D-11) takes three steps:
+Deploying (testnet first, D-11):
 
-1. `cargo near deploy build-non-reproducible-wasm <escrow-account>`, choosing
-   `with-init-call new` with
+1. Choose the token, `<usdc>` below. On mainnet it is native USDC,
+   `17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1` (from the 1Click
+   token list). On testnet, deploy the mock token after `make build` and use its account
+   (about 1.6 NEAR for its 151 KB of code):
+   `near contract deploy <usdc-account> use-file target/near/mock-ft/mock_ft.wasm with-init-call new json-args '{"symbol": "USDC", "decimals": 6}' prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' network-config testnet sign-with-keychain send`
+2. `cargo near deploy build-non-reproducible-wasm <escrow-account>` in `contracts/escrow/`,
+   choosing `with-init-call new` with
    `{"usdc_contract_id": "<usdc>", "treasury_account": "<treasury>", "fee_bps": 50, "review_window_sec": 1209600}`
    (a shorter `review_window_sec` for the demo).
-2. Register the escrow account and the treasury on the USDC contract:
+3. Register the escrow account and the treasury on the USDC contract:
    `storage_deposit({"account_id": "<account>", "registration_only": true})` with the
-   deposit from `storage_balance_bounds().min`.
-3. Keep NEAR on the escrow account for storage: about 0.003 NEAR per escrow and
-   0.0007 NEAR per signed action (D-19).
+   deposit from `storage_balance_bounds().min` (0.00125 NEAR on USDC and on mock-ft).
+4. Keep NEAR on the escrow account for storage: about 2.3 NEAR locked by its 230 KB of
+   code, then about 0.003 NEAR per escrow and 0.0007 NEAR per signed action (D-19).
 
 ### Backend
 
@@ -260,9 +269,23 @@ See [`frontend/README.md`](./frontend/README.md) for the code layout and convent
 
 ### Testnet vs mainnet
 
-Contract development and tests run on testnet with a mock NEP-141 token. 1Click has no
-testnet, so cross-chain funding runs on mainnet with small amounts; on testnet, quotes
-are requested with `dry: true`.
+Contract development and tests run on testnet with a mock NEP-141 token (`mock-ft`, with
+an open `mint`). 1Click has no testnet, so cross-chain funding only runs on mainnet, with
+small amounts. On testnet, a direct `ft_transfer_call` of the mock token takes the place
+of the client's payment:
+
+```sh
+cd contracts
+scripts/fund-escrow-testnet.sh <escrow-id> <payer-account>
+```
+
+The script reads `ESCROW_CONTRACT_ID`, `USDC_CONTRACT_ID` and `NEAR_RPC_URL` from
+`backend/.env` and stops unless the RPC is on testnet and the escrow is `Created`. It
+then registers the payer on the mock token if needed, mints the escrow total to the
+payer, and sends it to the escrow contract with the escrow ID as `msg`. The escrow page
+shows `Funded` on the next load, because the backend reads escrows from the contract.
+The payer signs with the near CLI ([near-cli-rs](https://github.com/near/near-cli-rs));
+set `NEAR_SIGN_WITH=sign-with-legacy-keychain` for keys in `~/.near-credentials`.
 
 ## Limitations
 
