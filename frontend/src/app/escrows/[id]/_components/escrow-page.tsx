@@ -12,7 +12,12 @@ import { useAuth } from "@/context/auth"
 import { useEscrowDetail } from "@/hooks/use-escrow-detail"
 import type { useGuestAccess } from "@/hooks/use-guest-access"
 import type { EscrowDetail, EscrowStatus } from "@/lib/api/escrow"
-import { approverView, isFreelancer, viewerRoles } from "@/lib/escrow-viewer"
+import {
+  approverView,
+  isFreelancer,
+  partyGuestAccess,
+  viewerRoles,
+} from "@/lib/escrow-viewer"
 import { sameWallet } from "@/lib/guest-access"
 import {
   EscrowHeader,
@@ -100,7 +105,7 @@ function EscrowView({
   const { recovery, account, token } = useAuth()
   const creator = escrow.viewer.creator
   const status = escrow.status
-  const access = guest.access
+  const access = partyGuestAccess(escrow, guest.access, account)
   const joined =
     !creator &&
     access !== null &&

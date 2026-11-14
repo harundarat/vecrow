@@ -18,6 +18,41 @@ function ownsWallet(account: Account | null, wallet: WalletRef): boolean {
   )
 }
 
+function nearWallet(accountId: string): WalletRef {
+  return { scheme: "nep413", address: accountId }
+}
+
+/** Whether the signed-in account is a party: creator, approver, freelancer or team member. */
+function accountIsParty(
+  escrow: Escrow & { viewer: { creator: boolean } },
+  account: Account
+): boolean {
+  if (escrow.viewer.creator) return true
+  const approver = escrow.client?.approver
+  const freelancer = escrow.freelancer?.account
+  const wallets = [
+    ...(approver ? [approverWallet(approver)] : []),
+    ...(freelancer ? [nearWallet(freelancer)] : []),
+    ...(escrow.freelancer?.split ?? []).map((s) => nearWallet(s.account_id)),
+  ]
+  return wallets.some((wallet) => ownsWallet(account, wallet))
+}
+
+/**
+ * The guest access that speaks for this visitor. Guest access is kept per
+ * escrow in the browser, so it can belong to the other party, for example
+ * when both sides joined in one browser. Once the signed-in account is a
+ * party itself, guest access for a wallet it does not own gives no role.
+ */
+export function partyGuestAccess(
+  escrow: Escrow & { viewer: { creator: boolean } },
+  guest: GuestAccess | null,
+  account: Account | null
+): GuestAccess | null {
+  if (!guest || !account || ownsWallet(account, guest.wallet)) return guest
+  return accountIsParty(escrow, account) ? null : guest
+}
+
 export type ApproverView = {
   /** The visitor holds the approver wallet: by its guest access or account. */
   approver: boolean
