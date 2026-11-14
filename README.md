@@ -18,11 +18,13 @@ automatically between team members. Freelancers and clients never buy NEAR for g
 
 ## Try it (judges)
 
-> TODO: live demo URL · demo video (X post URL)
+Demo video: [X post](https://x.com/harundarat/status/2121658495573585978). There is no
+hosted demo: run the app locally ([Run locally](#run-locally)) against the testnet
+contracts listed under [Contract](#contract).
 
-1. Log in at `<demo-url>` with a wallet, open `/new`, and create an escrow as the
-   freelancer with 2 milestones and a 70/30 split → you get a link for the client,
-   escrow status = `Open`.
+1. Sign in at `http://localhost:5173` with a wallet, click "New escrow"
+   (`/app/escrows/new`), and create an escrow as the freelancer with 2 milestones and
+   a 70/30 split → you get a link for the client, escrow status = `Open`.
 2. Open the link in another browser (no account needed), connect a wallet as the
    client, enter a NEAR refund account, and sign the terms once
    → escrow status = `PendingApproval`.
@@ -34,21 +36,21 @@ automatically between team members. Freelancers and clients never buy NEAR for g
    `contracts/scripts/fund-escrow-testnet.sh <escrow-id> <account>` (the ID is in the
    page URL, `/escrows/<escrow-id>`) and reload the page → escrow status = `Funded`
    (see [Testnet vs mainnet](#testnet-vs-mainnet)).
-5. As the freelancer, click "Submit milestone 1" (the wallet holds 0 NEAR)
-   → the relayer pays gas, milestone status = `Submitted`.
+5. As the freelancer, click "Submit" on milestone 1 and sign
+   → the relayer pays the gas, milestone status = `Submitted`.
 6. As the client, click "Request revision" → milestone status = `RevisionRequested`;
    the freelancer submits again → `Submitted`.
-7. As the client, click "Approve" → the treasury receives 0.5% and both team accounts
-   receive their share; transaction links are shown on the dashboard.
+7. As the client, click "Approve", then "Approve and pay" → the treasury receives 0.5%
+   and both team accounts receive their share; the milestone timeline links each
+   transaction.
 8. As the freelancer, click "Refund" on milestone 2 → USDC returns to the client's
    refund account, milestone status = `Refunded`, escrow status = `Completed`.
-9. Click "Export CSV" → one row per payout, fee included, ready for an accountant.
+9. Click "Download CSV" under Payouts → one row per payout, fee included, ready for an
+   accountant.
 
 The reverse direction works the same way: create the escrow as the client in step 1
 (approver wallet and refund account), let the freelancer join through the link with
 their NEAR account and split, and approve it as the client.
-
-> TODO: confirm every step against the deployed demo before the repository goes public.
 
 ## How NEAR is used
 
