@@ -14,7 +14,8 @@ and tests that verify it. For **how** it is built, see
 | Status | Meaning |
 | --- | --- |
 | Implemented | All acceptance criteria are met and covered by the linked tests |
-| Partial | Some acceptance criteria are met; the gap is described in the requirement |
+| Partial | Some acceptance criteria are met, or all are met but part of the requirement is not covered by the linked tests; the gap is described in the requirement |
+| In progress | Code exists, but no acceptance criterion is met yet; the gap is described in the requirement |
 | Cut | Not built for the hackathon; listed under [Limitations](#9-limitations) |
 
 - **Code** and **Tests** columns link to files in this monorepo.
@@ -107,7 +108,7 @@ after the link is shared (the creator cancels and creates a new escrow instead).
 | R-08 | Cross-chain funding via 1Click | Backend | Implemented | [funding.go](../backend/internal/usecase/funding/funding.go), [oneclick](../backend/internal/infrastructure/oneclick/), [handler/funding.go](../backend/internal/delivery/http/handler/funding.go) | [funding_test.go](../backend/internal/usecase/funding/funding_test.go), [oneclick/client_test.go](../backend/internal/infrastructure/oneclick/client_test.go), [funding_repository_integration_test.go](../backend/internal/repository/funding_repository_integration_test.go), [escrow_routes_test.go](../backend/internal/delivery/http/escrow_routes_test.go), [e2e](../backend/e2e/escrow_e2e_test.go) |
 | R-09 | Gasless meta transaction relayer | Backend | Implemented | [relay.go](../backend/internal/usecase/escrow/relay.go), [near_escrow_contract.go](../backend/internal/repository/near_escrow_contract.go), [nearrpc](../backend/internal/infrastructure/nearrpc/), [neartx](../backend/internal/neartx/) | [escrow_test.go](../backend/internal/usecase/escrow/escrow_test.go), [near_escrow_contract_test.go](../backend/internal/repository/near_escrow_contract_test.go), [signer_test.go](../backend/internal/infrastructure/nearrpc/signer_test.go), [neartx_test.go](../backend/internal/neartx/neartx_test.go), [e2e](../backend/e2e/escrow_e2e_test.go) |
 | R-10 | Client escrow page | Frontend | Partial | [escrow-page.tsx](../frontend/src/app/escrows/[id]/_components/escrow-page.tsx), [join-client-form.tsx](../frontend/src/app/escrows/[id]/_components/join-client-form.tsx), [funding-section.tsx](../frontend/src/app/escrows/[id]/_components/funding-section.tsx), [milestone-actions.tsx](../frontend/src/app/escrows/[id]/_components/milestone-actions.tsx) | Manual only |
-| R-11 | Freelancer dashboard | Frontend | Partial | [escrow-list.tsx](../frontend/src/app/app/_components/escrow-list.tsx), [new-escrow-form.tsx](../frontend/src/app/app/escrows/new/_components/new-escrow-form.tsx), [freelancer-actions.tsx](../frontend/src/app/escrows/[id]/_components/freelancer-actions.tsx), [payouts-section.tsx](../frontend/src/app/escrows/[id]/_components/payouts-section.tsx) | Manual only |
+| R-11 | Freelancer dashboard | Frontend | In progress | [escrow-list.tsx](../frontend/src/app/app/_components/escrow-list.tsx), [new-escrow-form.tsx](../frontend/src/app/app/escrows/new/_components/new-escrow-form.tsx), [freelancer-actions.tsx](../frontend/src/app/escrows/[id]/_components/freelancer-actions.tsx), [payouts-section.tsx](../frontend/src/app/escrows/[id]/_components/payouts-section.tsx) | Manual only |
 | R-12 | CSV export | Backend | Implemented | [export.go](../backend/internal/usecase/escrow/export.go), [handler/export.go](../backend/internal/delivery/http/handler/export.go), [usdc.go](../backend/internal/domain/usdc.go) | [export_test.go](../backend/internal/usecase/escrow/export_test.go), [export_routes_test.go](../backend/internal/delivery/http/export_routes_test.go), [usdc_test.go](../backend/internal/domain/usdc_test.go), [e2e](../backend/e2e/escrow_e2e_test.go) |
 | R-13 | Wallet sign-up and login | Backend + frontend | Partial | [login.go](../backend/internal/usecase/auth/login.go), [walletsig](../backend/internal/walletsig/), [sign-in-panel.tsx](../frontend/src/app/sign-in/_components/sign-in-panel.tsx), [use-wallet-signer.ts](../frontend/src/hooks/use-wallet-signer.ts) | [login_test.go](../backend/internal/usecase/auth/login_test.go), [walletsig_test.go](../backend/internal/walletsig/walletsig_test.go) |
 | R-14 | Profile, multiple wallets, email | Backend + frontend | Partial | [account.go](../backend/internal/usecase/auth/account.go), [otp.go](../backend/internal/usecase/auth/otp.go), [otp_store.go](../backend/internal/repository/otp_store.go), [account_repository.go](../backend/internal/repository/account_repository.go), [mail](../backend/internal/infrastructure/mail/), [handler/me.go](../backend/internal/delivery/http/handler/me.go), [settings](../frontend/src/app/app/settings/_components/) | [account_test.go](../backend/internal/usecase/auth/account_test.go), [email_test.go](../backend/internal/usecase/auth/email_test.go), [otp_store_test.go](../backend/internal/repository/otp_store_test.go), [account_repository_integration_test.go](../backend/internal/repository/account_repository_integration_test.go), [mail_test.go](../backend/internal/infrastructure/mail/mail_test.go), [smtp_integration_test.go](../backend/internal/infrastructure/mail/smtp_integration_test.go), [auth_routes_test.go](../backend/internal/delivery/http/auth_routes_test.go) |
@@ -408,7 +409,9 @@ and linked wallets whenever escrows are read, so an invitation reaches an accoun
 verifies the email or links the wallet later. `GET /escrows/:id` shows the invitation to
 the creator and a `submitter_not_invited` warning to the creator and the invited account
 (D-29). In the frontend, the creator invites from the new-escrow form and changes or
-removes the invitation on the escrow page; both were tested manually only.
+removes the invitation on the escrow page; both were tested manually only. The escrow
+page and the review step show the backend's warnings as they come, but the
+`submitter_not_invited` warning itself has not been seen in the browser.
 
 #### R-16 — "My escrows"
 
@@ -556,7 +559,7 @@ milestones, view status, fees, pending payouts, and transaction links.
 
 - [ ] One complete flow can be demonstrated end to end with the freelancer as creator, and one with the client as creator.
 
-*Partial:* the dashboard, the new-escrow form and the freelancer actions (submit,
+*In progress:* the dashboard, the new-escrow form and the freelancer actions (submit,
 refund one or all `Pending` milestones, cancel, payout list and CSV download) are
 built. Creating, joining, submitting and refunding ran on testnet from the browser,
 the freelancer's calls as gasless NEP-366 delegate actions, with keys held by test
