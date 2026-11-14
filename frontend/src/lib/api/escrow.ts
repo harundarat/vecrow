@@ -1,5 +1,5 @@
 import type { WalletProof, WalletScheme } from "./auth"
-import { apiFetch, type Requester } from "./client"
+import { apiDownload, apiFetch, type Requester } from "./client"
 
 /** The first three exist only in the backend, before the escrow is on-chain. */
 export const ESCROW_STATUSES = [
@@ -289,6 +289,44 @@ export function cancelAsApprover(id: string, body: ApproverSignature) {
     method: "POST",
     body,
   })
+}
+
+/** The freelancer's signed delegate action, as base64 Borsh; no session needed. */
+export type DelegateBody = { delegate_action: string }
+
+export function submitMilestone(
+  id: string,
+  milestone: number,
+  body: DelegateBody
+) {
+  return apiFetch<ActionResponse>(
+    `${path(id)}/milestones/${milestone}/submit`,
+    { method: "POST", body }
+  )
+}
+
+/** Refunds one or every Pending milestone, as the delegate action names. */
+export function refundMilestones(id: string, body: DelegateBody) {
+  return apiFetch<ActionResponse>(`${path(id)}/refund`, {
+    method: "POST",
+    body,
+  })
+}
+
+/** Cancels a Created escrow with the freelancer's delegate action. */
+export function cancelAsFreelancer(id: string, body: DelegateBody) {
+  return apiFetch<ActionResponse>(`${path(id)}/cancel`, {
+    method: "POST",
+    body,
+  })
+}
+
+/** The payouts as CSV; only the parties may download it. */
+export function downloadPayoutsCsv(
+  id: string,
+  auth: { token: string | null; guestToken: string | null }
+) {
+  return apiDownload(`${path(id)}/export.csv`, auth)
 }
 
 /** A new guest token for the wallet that submitted, proven by a signature. */

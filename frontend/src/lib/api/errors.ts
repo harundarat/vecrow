@@ -15,3 +15,20 @@ function toSentence(message: string): string {
   const capitalized = text[0].toUpperCase() + text.slice(1)
   return /[.!?]$/.test(capitalized) ? capitalized : `${capitalized}.`
 }
+
+/**
+ * Sends a call that waits for a NEAR transaction. The server answers only
+ * once it is final, so a dropped connection does not mean it failed.
+ */
+export async function sendTransaction<T>(send: () => Promise<T>): Promise<T> {
+  try {
+    return await send()
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 0) {
+      throw new Error(
+        "The server did not answer in time. It may have gone through, so check the escrow before you try again."
+      )
+    }
+    throw err
+  }
+}

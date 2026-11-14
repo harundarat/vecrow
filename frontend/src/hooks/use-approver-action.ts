@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback } from "react"
-import { ApiError } from "@/lib/api/client"
+import { sendTransaction } from "@/lib/api/errors"
 import type { ApproverSignature, Escrow } from "@/lib/api/escrow"
 import { approverActionRequest } from "@/lib/approver-action"
 import { approverWallet } from "@/lib/escrow-viewer"
@@ -48,22 +48,13 @@ export function useApproverAction(escrow: Escrow) {
         )
       }
       onStep("sending")
-      try {
-        await send({
+      await sendTransaction(() =>
+        send({
           nonce: request.nonce,
           deadline_ms: request.deadline_ms,
           signature: signed.signature,
         })
-      } catch (err) {
-        // The server waits for the transaction, so a dropped connection
-        // does not mean it failed.
-        if (err instanceof ApiError && err.status === 0) {
-          throw new Error(
-            "The server did not answer in time. It may have gone through, so check the escrow before you try again."
-          )
-        }
-        throw err
-      }
+      )
     },
     [approver, contractId, signers]
   )
