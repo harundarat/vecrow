@@ -10,8 +10,8 @@ import {
   Mail,
   SearchX,
 } from "lucide-react"
+import { EscrowNextStep } from "@/components/escrow-next-step"
 import {
-  ESCROW_STATUS_HINT,
   ESCROW_STATUS_LABEL,
   EscrowStatusBadge,
 } from "@/components/escrow-status-badge"
@@ -217,9 +217,14 @@ function EscrowItem({ escrow }: { escrow: MyEscrow }) {
             {escrow.total ? formatUsdc(escrow.total) : "—"}{" "}
             <span className="text-sm text-muted-foreground">USDC</span>
           </p>
-          <p className="text-sm text-muted-foreground">
-            {ESCROW_STATUS_HINT[escrow.status]}
-          </p>
+          <EscrowNextStep
+            escrow={escrow}
+            roles={escrow.roles}
+            creator={
+              !escrow.invited && escrow.roles.includes(escrow.creator_role)
+            }
+            className="mt-1"
+          />
         </div>
         <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <span>

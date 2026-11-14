@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { ArrowLeft, CircleAlert, LoaderCircle } from "lucide-react"
 import { VecrowLogoWordmark } from "@/assets/vecrow-logo-wordmark"
+import { EscrowNextStep } from "@/components/escrow-next-step"
 import { FeedbackMessage } from "@/components/feedback-message"
 import { useAuth } from "@/context/auth"
 import { useEscrowDetail } from "@/hooks/use-escrow-detail"
@@ -127,6 +128,12 @@ function EscrowView({
   return (
     <>
       <EscrowHeader escrow={escrow} />
+      <EscrowNextStep
+        escrow={escrow}
+        roles={roles}
+        creator={creator}
+        className="rounded-xl border p-3"
+      />
       {recovery && (
         <p className="rounded-2xl bg-primary/10 p-4 text-sm">
           You signed in with an email code, so you can only view this escrow.{" "}
