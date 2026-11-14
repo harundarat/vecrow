@@ -1,0 +1,20 @@
+[package]
+name = "vecrow-escrow"
+description = "Vecrow milestone escrow with revenue split, paid in USDC on NEAR"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+hex.workspace = true
+# `unstable` exposes env::ecrecover for EIP-191 approvals.
+near-sdk = { workspace = true, features = ["unstable"] }
+
+[dev-dependencies]
+near-sdk = { workspace = true, features = ["unit-testing", "unstable"] }
+wallet-fixtures = { path = "../wallet-fixtures" }

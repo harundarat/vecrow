@@ -1,0 +1,33 @@
+# sqlc generates type-safe Go from the SQL in internal/repository/queries,
+# using the goose migrations as the schema. Run `make sqlc` after adding or
+# changing a query; sqlc fails while the queries directory has no .sql file.
+version: "2"
+sql:
+  - engine: postgresql
+    schema: migrations
+    queries: internal/repository/queries
+    gen:
+      go:
+        package: dbgen
+        out: internal/repository/dbgen
+        sql_package: pgx/v5
+        emit_interface: true
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+        overrides:
+          - db_type: uuid
+            go_type: github.com/google/uuid.UUID
+          - db_type: uuid
+            nullable: true
+            go_type:
+              import: github.com/google/uuid
+              type: UUID
+              pointer: true
+          - db_type: timestamptz
+            go_type: time.Time
+          - db_type: timestamptz
+            nullable: true
+            go_type:
+              import: time
+              type: Time
+              pointer: true

@@ -1,0 +1,97 @@
+mod common;
+
+use common::*;
+use serde_json::json;
+
+#[tokio::test]
+async fn exact_below_and_above_total() -> anyhow::Result<()> {
+    let env = setup().await?;
+    env.mint(env.client.id(), usdc(10_000)).await?;
+
+    let id = env.create_escrow_for(&Wallet::evm()).await?;
+    assert_eq!(env.fund(&id, usdc(1_499)).await?, 0);
+    assert_eq!(env.status(&id).await?, "Created");
+    assert_eq!(env.balance(env.client.id()).await?, usdc(10_000));
+    assert_eq!(env.balance(env.escrow.id()).await?, 0);
+
+    assert_eq!(env.fund(&id, usdc(1_500)).await?, usdc(1_500));
+    let escrow = env.get_escrow(&id).await?;
+    assert_eq!(escrow["status"], "Funded");
+    assert_eq!(escrow["balance"], usdc(1_500).to_string());
+    assert_eq!(env.balance(env.escrow.id()).await?, usdc(1_500));
+
+    let above = env.create_escrow_for(&Wallet::solana()).await?;
+    assert_eq!(env.fund(&above, usdc(2_000)).await?, usdc(1_500));
+    let escrow = env.get_escrow(&above).await?;
+    assert_eq!(escrow["status"], "Funded");
+    assert_eq!(escrow["balance"], usdc(1_500).to_string());
+    assert_eq!(env.balance(env.escrow.id()).await?, usdc(3_000));
+    assert_eq!(env.balance(env.client.id()).await?, usdc(7_000));
+    Ok(())
+}
+
+#[tokio::test]
+async fn transfers_to_escrows_not_awaiting_funds_are_returned() -> anyhow::Result<()> {
+    let env = setup().await?;
+    env.mint(env.client.id(), usdc(10_000)).await?;
+
+    let funded = env.create_escrow_for(&Wallet::evm()).await?;
+    assert_eq!(env.fund(&funded, usdc(1_500)).await?, usdc(1_500));
+    assert_eq!(env.fund(&funded, usdc(1_500)).await?, 0);
+
+    let cancelled = env.create_escrow_for(&Wallet::solana()).await?;
+    env.call(&env.freelancer, "cancel", json!({ "escrow_id": cancelled }))
+        .await?
+        .into_result()?;
+    assert_eq!(env.fund(&cancelled, usdc(1_500)).await?, 0);
+
+    let not_on_chain = env.next_escrow_id();
+    assert_eq!(env.fund(&not_on_chain, usdc(1_500)).await?, 0);
+    assert_eq!(env.fund("Not An ID", usdc(1_500)).await?, 0);
+
+    assert_eq!(env.balance(env.escrow.id()).await?, usdc(1_500));
+    assert_eq!(env.balance(env.client.id()).await?, usdc(8_500));
+    Ok(())
+}
+
+#[tokio::test]
+async fn other_tokens_are_returned() -> anyhow::Result<()> {
+    let env = setup().await?;
+    let fake = deploy_token(&env.worker, "fake").await?;
+    for id in [env.escrow.id(), env.client.id()] {
+        env.backend
+            .call(fake.id(), "storage_deposit")
+            .args_json(json!({ "account_id": id, "registration_only": true }))
+            .deposit(near_workspaces::types::NearToken::from_millinear(10))
+            .transact()
+            .await?
+            .into_result()?;
+    }
+    fake.call("mint")
+        .args_json(json!({ "account_id": env.client.id(), "amount": usdc(1_500).to_string() }))
+        .transact()
+        .await?
+        .into_result()?;
+
+    let id = env.create_escrow_for(&Wallet::evm()).await?;
+    assert_eq!(
+        env.transfer_call(&fake, &env.client, &id, usdc(1_500))
+            .await?,
+        0
+    );
+    assert_eq!(env.status(&id).await?, "Created");
+    Ok(())
+}
+
+#[tokio::test]
+async fn funded_escrow_cannot_be_cancelled() -> anyhow::Result<()> {
+    let env = setup().await?;
+    let id = env.funded_escrow(&Wallet::near(env.client.id())).await?;
+    assert_failure(
+        env.call(&env.freelancer, "cancel", json!({ "escrow_id": id }))
+            .await?,
+        "only an unfunded escrow can be cancelled",
+    );
+    assert_eq!(env.status(&id).await?, "Funded");
+    Ok(())
+}

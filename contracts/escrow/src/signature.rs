@@ -1,0 +1,313 @@
+use crate::SplitShare;
+use near_sdk::base64::Engine;
+use near_sdk::json_types::U128;
+use near_sdk::{AccountId, borsh, env, near};
+
+pub const NEP413_TAG: u32 = (1 << 31) + 413;
+
+#[near(serializers = [json])]
+#[serde(tag = "scheme", rename_all = "lowercase")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Approver {
+    // The contract cannot read access keys, so the signing key is fixed in the terms.
+    Nep413 {
+        account_id: AccountId,
+        public_key: String,
+    },
+    Eip191 {
+        address: String,
+    },
+    Ed25519 {
+        address: String,
+    },
+}
+
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ApproverKey {
+    Nep413 {
+        account_id: AccountId,
+        public_key: [u8; 32],
+    },
+    Eip191 {
+        address: [u8; 20],
+    },
+    Ed25519 {
+        public_key: [u8; 32],
+    },
+}
+
+impl ApproverKey {
+    pub fn parse(approver: &Approver) -> Result<Self, &'static str> {
+        match approver {
+            Approver::Nep413 {
+                account_id,
+                public_key,
+            } => Ok(Self::Nep413 {
+                account_id: account_id.clone(),
+                public_key: parse_near_public_key(public_key)?,
+            }),
+            Approver::Eip191 { address } => {
+                let hex_part = address
+                    .strip_prefix("0x")
+                    .ok_or("address must be 0x followed by 40 hex characters")?;
+                let mut bytes = [0u8; 20];
+                hex::decode_to_slice(hex_part, &mut bytes)
+                    .map_err(|_| "address must be 0x followed by 40 hex characters")?;
+                Ok(Self::Eip191 { address: bytes })
+            }
+            Approver::Ed25519 { address } => Ok(Self::Ed25519 {
+                public_key: decode_base58_32(address)
+                    .ok_or("address must be a base58 ed25519 public key")?,
+            }),
+        }
+    }
+
+    pub fn to_approver(&self) -> Approver {
+        match self {
+            Self::Nep413 {
+                account_id,
+                public_key,
+            } => Approver::Nep413 {
+                account_id: account_id.clone(),
+                public_key: format!(
+                    "ed25519:{}",
+                    near_sdk::bs58::encode(public_key).into_string()
+                ),
+            },
+            Self::Eip191 { address } => Approver::Eip191 {
+                address: format!("0x{}", hex::encode(address)),
+            },
+            Self::Ed25519 { public_key } => Approver::Ed25519 {
+                address: near_sdk::bs58::encode(public_key).into_string(),
+            },
+        }
+    }
+
+    pub fn label(&self) -> String {
+        match self.to_approver() {
+            Approver::Nep413 { account_id, .. } => format!("nep413:{account_id}"),
+            Approver::Eip191 { address } => format!("eip191:{address}"),
+            Approver::Ed25519 { address } => format!("ed25519:{address}"),
+        }
+    }
+
+    pub fn near_account_ids(&self) -> Vec<String> {
+        match self {
+            Self::Nep413 {
+                account_id,
+                public_key,
+            } => vec![account_id.to_string(), hex::encode(public_key)],
+            Self::Eip191 { address } => vec![format!("0x{}", hex::encode(address))],
+            Self::Ed25519 { public_key } => vec![hex::encode(public_key)],
+        }
+    }
+
+    pub fn ed25519_key(&self) -> Option<&[u8; 32]> {
+        match self {
+            Self::Nep413 { public_key, .. } | Self::Ed25519 { public_key } => Some(public_key),
+            Self::Eip191 { .. } => None,
+        }
+    }
+
+    pub fn verify(
+        &self,
+        message: &str,
+        nonce: &[u8; 32],
+        recipient: &str,
+        signature: &str,
+    ) -> Result<bool, &'static str> {
+        // Only NEP-413 signs `nonce` and `recipient` separately; the other schemes
+        // carry them inside `message`.
+        match self {
+            Self::Nep413 { public_key, .. } => {
+                verify_nep413(public_key, message, nonce, recipient, signature)
+            }
+            Self::Eip191 { address } => {
+                let signature = signature.strip_prefix("0x").unwrap_or(signature);
+                let mut bytes = [0u8; 65];
+                hex::decode_to_slice(signature, &mut bytes)
+                    .map_err(|_| "eip191 signature must be hex of 65 bytes")?;
+                // Wallets return v as 27/28 (legacy) or 0/1.
+                let v = match bytes[64] {
+                    0 | 27 => 0,
+                    1 | 28 => 1,
+                    _ => return Err("eip191 signature has an invalid recovery id"),
+                };
+                let hash = env::keccak256_array(eip191_payload(message));
+                // `true` rejects malleable high-s signatures.
+                Ok(match env::ecrecover(&hash, &bytes[..64], v, true) {
+                    Some(public_key) => env::keccak256_array(public_key)[12..] == address[..],
+                    None => false,
+                })
+            }
+            Self::Ed25519 { public_key } => {
+                let signature = decode_base58_64(signature)
+                    .ok_or("ed25519 signature must be base58 of 64 bytes")?;
+                Ok(env::ed25519_verify(&signature, message, public_key))
+            }
+        }
+    }
+}
+
+pub fn verify_nep413(
+    public_key: &[u8; 32],
+    message: &str,
+    nonce: &[u8; 32],
+    recipient: &str,
+    signature: &str,
+) -> Result<bool, &'static str> {
+    let signature =
+        decode_base64_64(signature).ok_or("nep413 signature must be base64 of 64 bytes")?;
+    let hash = env::sha256_array(nep413_payload(message, nonce, recipient));
+    Ok(env::ed25519_verify(&signature, hash, public_key))
+}
+
+pub fn parse_near_public_key(public_key: &str) -> Result<[u8; 32], &'static str> {
+    public_key
+        .strip_prefix("ed25519:")
+        .and_then(decode_base58_32)
+        .ok_or("public_key must be ed25519:<base58>")
+}
+
+pub fn nep413_payload(message: &str, nonce: &[u8; 32], recipient: &str) -> Vec<u8> {
+    #[derive(near_sdk::borsh::BorshSerialize)]
+    #[borsh(crate = "near_sdk::borsh")]
+    struct Payload<'a> {
+        message: &'a str,
+        nonce: &'a [u8; 32],
+        recipient: &'a str,
+        callback_url: Option<&'a str>,
+    }
+    let mut bytes = borsh::to_vec(&NEP413_TAG).expect("u32 serializes");
+    borsh::to_writer(
+        &mut bytes,
+        &Payload {
+            message,
+            nonce,
+            recipient,
+            callback_url: None,
+        },
+    )
+    .expect("payload serializes");
+    bytes
+}
+
+pub fn eip191_payload(message: &str) -> Vec<u8> {
+    let mut bytes = format!("\x19Ethereum Signed Message:\n{}", message.len()).into_bytes();
+    bytes.extend_from_slice(message.as_bytes());
+    bytes
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Action {
+    Approve,
+    RequestRevision,
+    Cancel,
+}
+
+impl Action {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Approve => "approve_milestone",
+            Self::RequestRevision => "request_revision",
+            Self::Cancel => "cancel",
+        }
+    }
+}
+
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EscrowTerms {
+    pub escrow_id: String,
+    pub freelancer: AccountId,
+    pub milestones: Vec<U128>,
+    pub split: Vec<SplitShare>,
+    pub approver: Approver,
+    pub refund_account: AccountId,
+    pub fee_bps: u16,
+    pub deadline_ms: u64,
+}
+
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FreelancerSignature {
+    pub public_key: String,
+    pub signature: String,
+}
+
+pub fn terms_message(
+    contract_id: &AccountId,
+    terms: &EscrowTerms,
+    approver: &ApproverKey,
+) -> String {
+    let milestones: Vec<String> = terms.milestones.iter().map(|m| m.0.to_string()).collect();
+    let split: Vec<String> = terms
+        .split
+        .iter()
+        .map(|s| format!("{}:{}", s.account_id, s.bps))
+        .collect();
+    format!(
+        "Vecrow create_escrow\nContract: {contract_id}\nEscrow: {}\nFreelancer: {}\nMilestones: {}\nSplit: {}\nApprover: {}\nRefund account: {}\nFee: {} bps\nDeadline: {}",
+        terms.escrow_id,
+        terms.freelancer,
+        milestones.join(","),
+        split.join(","),
+        approver.label(),
+        terms.refund_account,
+        terms.fee_bps,
+        terms.deadline_ms,
+    )
+}
+
+// The terms carry no nonce of their own; the unique escrow ID makes each
+// message unique.
+pub fn terms_nonce(message: &str) -> [u8; 32] {
+    env::sha256_array(message.as_bytes())
+}
+
+pub fn action_message(
+    action: Action,
+    contract_id: &AccountId,
+    escrow_id: &str,
+    milestone: Option<u32>,
+    nonce: &[u8; 32],
+    deadline_ms: u64,
+) -> String {
+    let milestone = milestone
+        .map(|m| format!("Milestone: {m}\n"))
+        .unwrap_or_default();
+    format!(
+        "Vecrow {}\nContract: {contract_id}\nEscrow: {escrow_id}\n{milestone}Nonce: {}\nDeadline: {deadline_ms}",
+        action.name(),
+        hex::encode(nonce),
+    )
+}
+
+// Lowercase only, so the `Nonce:` line has a single spelling.
+pub fn parse_nonce(nonce: &str) -> Result<[u8; 32], &'static str> {
+    let mut bytes = [0u8; 32];
+    let lowercase = nonce
+        .bytes()
+        .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+    if !lowercase || hex::decode_to_slice(nonce, &mut bytes).is_err() {
+        return Err("nonce must be 64 lowercase hex characters");
+    }
+    Ok(bytes)
+}
+
+fn decode_base58_32(s: &str) -> Option<[u8; 32]> {
+    near_sdk::bs58::decode(s).into_vec().ok()?.try_into().ok()
+}
+
+fn decode_base58_64(s: &str) -> Option<[u8; 64]> {
+    near_sdk::bs58::decode(s).into_vec().ok()?.try_into().ok()
+}
+
+fn decode_base64_64(s: &str) -> Option<[u8; 64]> {
+    near_sdk::base64::engine::general_purpose::STANDARD
+        .decode(s)
+        .ok()?
+        .try_into()
+        .ok()
+}
