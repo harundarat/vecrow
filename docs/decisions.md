@@ -261,7 +261,7 @@ and frontend.
 
 **Consequences.**
 - All contract behaviour can be reproduced on testnet without spending money.
-- The cross-chain funding step can only be reproduced on mainnet; `dry: true` quotes show it without sending funds.
+- The cross-chain funding step can only be reproduced on mainnet. On testnet, `contracts/scripts/fund-escrow-testnet.sh` funds an escrow with the mock token through `ft_transfer_call`, which reaches the same `ft_on_transfer` entry point as the 1Click delivery.
 
 ## D-12 — Backend stack and layering
 

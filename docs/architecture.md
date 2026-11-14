@@ -775,8 +775,8 @@ may download it.
 
 | Environment | Contract | Token | Funding |
 | --- | --- | --- | --- |
-| Local / testnet | Deployed from `contracts/` | Mock NEP-141 token | Direct `ft_transfer_call`; 1Click quotes with `dry: true` |
-| Mainnet (demo) | Separate development account | USDC (contract ID from the 1Click token list) | 1Click with small amounts |
+| Local / testnet | Deployed from `contracts/` (accounts listed in the README) | Mock NEP-141 token (`mock-ft`) | `contracts/scripts/fund-escrow-testnet.sh` mints the mock token and sends it with `ft_transfer_call` (`msg` = escrow ID). 1Click has no testnet, so its payment form cannot fund a testnet escrow |
+| Mainnet | Not deployed yet; a separate development account | USDC (contract ID from the 1Click token list) | 1Click with small amounts |
 
 Configuration such as RPC URL, contract and treasury account IDs, the relayer and
 backend keys, the PostgreSQL and RabbitMQ URLs, the 1Click API settings, the SMTP
